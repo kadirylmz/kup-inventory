@@ -528,6 +528,89 @@ def merge_project_equipment(
     return _to_project_out(proj)
 
 
+@router.delete("/projects/{project_id}/equipment/bulk-delete")
+def bulk_delete_project_equipment(
+    project_id: uuid.UUID,
+    request: Request,
+    equipment_ids: list[uuid.UUID] | None = None,
+    all_clear: bool = False,
+    db: Session = Depends(get_db),
+    me: User = Depends(require_permission("project.manage")),
+):
+    """
+    Projedeki seçilen veya tüm ekipman hareket satırlarını toplu siler.
+    Sahada kalanlar otomatik olarak depoya geri iade edilir.
+    """
+    proj = db.get(Project, project_id)
+    if not proj or proj.tenant_id != me.tenant_id or proj.is_deleted:
+        raise HTTPException(404, "Proje bulunamadı.")
+
+    q = select(ProjectAsset).where(
+        ProjectAsset.tenant_id == me.tenant_id,
+        ProjectAsset.project_id == proj.id,
+    )
+    if not all_clear and equipment_ids:
+        q = q.where(ProjectAsset.id.in_(equipment_ids))
+    elif not all_clear and not equipment_ids:
+        raise HTTPException(400, "Silinecek ekipman satırları belirtilmedi.")
+
+    items = db.scalars(q).all()
+    count = 0
+
+    def_wh = db.scalar(
+        select(Warehouse).where(
+            Warehouse.tenant_id == me.tenant_id,
+            Warehouse.is_deleted.is_(False),
+            Warehouse.code == "WH-CENTRAL",
+        )
+    ) or db.scalar(
+        select(Warehouse).where(
+            Warehouse.tenant_id == me.tenant_id,
+            Warehouse.is_deleted.is_(False),
+        ).order_by(Warehouse.created_at.asc())
+    )
+
+    for pa in items:
+        rem = pa.quantity - pa.returned_quantity
+        if rem > 0:
+            if pa.asset:
+                pa.asset.status = "in_warehouse"
+                pa.asset.assigned_project_name = None
+                pa.asset.is_deleted = False
+                pa.asset.is_active = True
+                if def_wh:
+                    pa.asset.warehouse_name = def_wh.name
+                if pa.asset.product and pa.asset.product.is_deleted:
+                    pa.asset.product.is_deleted = False
+                    pa.asset.product.is_active = True
+                    pa.asset.product.status = "in_warehouse"
+            elif pa.product:
+                if pa.product.is_deleted:
+                    pa.product.is_deleted = False
+                    pa.product.is_active = True
+                if def_wh:
+                    _adjust_balance(db, me.tenant_id, pa.product, def_wh.id, None, rem)
+                else:
+                    pa.product.quantity = (pa.product.quantity or Decimal("0")) + rem
+                if pa.product.quantity > Decimal("0"):
+                    pa.product.status = "in_warehouse"
+        db.delete(pa)
+        count += 1
+
+    write_audit(
+        db,
+        tenant_id=me.tenant_id,
+        user_id=me.id,
+        action="project.bulk_delete_equipment",
+        entity="project",
+        entity_id=proj.id,
+        new={"project": proj.name, "deleted_count": count},
+        ip=client_ip(request),
+    )
+    db.commit()
+    return {"ok": True, "deleted_count": count}
+
+
 @router.delete("/projects/{project_id}/equipment/{equipment_id}", status_code=204)
 def delete_project_equipment(
     project_id: uuid.UUID,

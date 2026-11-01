@@ -199,6 +199,49 @@ export default function AssignmentsPage() {
     }
   }
 
+  const [selectedAsgIds, setSelectedAsgIds] = useState<string[]>([])
+
+  const handleBulkDeleteAssignments = async () => {
+    if (!selectedAsgIds.length) return
+    if (!window.confirm(`Seçili ${selectedAsgIds.length} adet zimmet fişini silmek istediğinize emin misiniz?\n\nİade edilmemiş tüm malzemeler otomatik olarak depoya geri aktarılacaktır.`)) return
+    try {
+      await api('/assignments/bulk-delete', {
+        method: 'DELETE',
+        body: JSON.stringify(selectedAsgIds),
+      })
+      toast.success(`${selectedAsgIds.length} adet zimmet fişi silindi ve malzemeler depoya döndürüldü.`)
+      setSelectedAsgIds([])
+      qc.invalidateQueries({ queryKey: ['assignments'] })
+      qc.invalidateQueries({ queryKey: ['products'] })
+      qc.invalidateQueries({ queryKey: ['employees'] })
+      qc.invalidateQueries({ queryKey: ['assets'] })
+      qc.invalidateQueries({ queryKey: ['warehouse-stock'] })
+      qc.invalidateQueries({ queryKey: ['movements'] })
+    } catch (err) {
+      toast.error((err as Error).message)
+    }
+  }
+
+  const handleClearAllAssignments = async () => {
+    if (!assignments.length) return
+    if (!window.confirm(`DİKKAT: Sistemdeki TÜM (${assignments.length}) zimmet fişini silmek ve tüm zimmetli malzemeleri depoya geri çekmek istediğinize emin misiniz?`)) return
+    try {
+      await api('/assignments/bulk-delete?all_clear=true', {
+        method: 'DELETE',
+      })
+      toast.success('Tüm zimmet fişleri başarıyla silindi ve malzemeler depoya aktarıldı.')
+      setSelectedAsgIds([])
+      qc.invalidateQueries({ queryKey: ['assignments'] })
+      qc.invalidateQueries({ queryKey: ['products'] })
+      qc.invalidateQueries({ queryKey: ['employees'] })
+      qc.invalidateQueries({ queryKey: ['assets'] })
+      qc.invalidateQueries({ queryKey: ['warehouse-stock'] })
+      qc.invalidateQueries({ queryKey: ['movements'] })
+    } catch (err) {
+      toast.error((err as Error).message)
+    }
+  }
+
   const inputCls =
     'w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand-500 dark:border-slate-700 dark:bg-slate-800'
 
@@ -212,12 +255,30 @@ export default function AssignmentsPage() {
           </p>
         </div>
         {can('assignment.manage') && (
-          <button
-            onClick={openNewAssignment}
-            className="flex items-center gap-2 rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700"
-          >
-            <Plus className="h-4 w-4" /> Yeni Zimmet Teslimi
-          </button>
+          <div className="flex items-center gap-2">
+            {selectedAsgIds.length > 0 && (
+              <button
+                onClick={handleBulkDeleteAssignments}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-rose-600 px-3 py-2 text-sm font-semibold text-white shadow-xs hover:bg-rose-700 transition"
+              >
+                <Trash2 className="h-4 w-4" /> Seçilenleri Sil ({selectedAsgIds.length})
+              </button>
+            )}
+            {assignments.length > 0 && (
+              <button
+                onClick={handleClearAllAssignments}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-rose-200 bg-rose-50/70 px-3 py-2 text-sm font-semibold text-rose-700 hover:bg-rose-100 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-300 transition"
+              >
+                <Trash2 className="h-4 w-4" /> Tümünü Temizle
+              </button>
+            )}
+            <button
+              onClick={openNewAssignment}
+              className="flex items-center gap-2 rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700"
+            >
+              <Plus className="h-4 w-4" /> Yeni Zimmet Teslimi
+            </button>
+          </div>
         )}
       </div>
 
@@ -233,39 +294,55 @@ export default function AssignmentsPage() {
           </div>
         ) : (
           <div className="divide-y divide-slate-100 dark:divide-slate-800">
-            {assignments.map(asg => (
-              <div key={asg.id} className="p-5">
+            {assignments.map(asg => {
+              const isSelected = selectedAsgIds.includes(asg.id)
+              return (
+              <div key={asg.id} className={`p-5 transition ${isSelected ? 'bg-indigo-50/30 dark:bg-indigo-950/20' : ''}`}>
                 <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="font-mono text-xs font-bold text-brand-600 dark:text-indigo-400">
-                        {asg.assignment_no}
-                      </span>
-                      <span
-                        className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${
-                          asg.status === 'active'
-                            ? 'bg-purple-50 text-purple-700 dark:bg-purple-500/15 dark:text-purple-300'
+                  <div className="flex items-start gap-3">
+                    {can('assignment.manage') && (
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={() => {
+                          setSelectedAsgIds(prev =>
+                            prev.includes(asg.id) ? prev.filter(x => x !== asg.id) : [...prev, asg.id]
+                          )
+                        }}
+                        className="mt-1 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+                      />
+                    )}
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono text-xs font-bold text-brand-600 dark:text-indigo-400">
+                          {asg.assignment_no}
+                        </span>
+                        <span
+                          className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${
+                            asg.status === 'active'
+                              ? 'bg-purple-50 text-purple-700 dark:bg-purple-500/15 dark:text-purple-300'
+                              : asg.status === 'partial_returned'
+                                ? 'bg-amber-50 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300'
+                                : 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300'
+                          }`}
+                        >
+                          {asg.status === 'active'
+                            ? 'Aktif Zimmet'
                             : asg.status === 'partial_returned'
-                              ? 'bg-amber-50 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300'
-                              : 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300'
-                        }`}
-                      >
-                        {asg.status === 'active'
-                          ? 'Aktif Zimmet'
-                          : asg.status === 'partial_returned'
-                            ? 'Kısmi İade'
-                            : 'Tamamı İade Alındı'}
-                      </span>
-                    </div>
-                    <div className="mt-1 text-base font-bold">
-                      Teslim Alan: {asg.employee_name}{' '}
-                      <span className="text-xs font-normal text-slate-500">
-                        ({[asg.employee_department, asg.employee_position].filter(Boolean).join(' • ')})
-                      </span>
-                    </div>
-                    <div className="text-xs text-slate-500">
-                      Teslim Eden: {asg.delivered_by_name} • Tarih:{' '}
-                      {new Date(asg.delivered_at).toLocaleString('tr-TR')}
+                              ? 'Kısmi İade'
+                              : 'Tamamı İade Alındı'}
+                        </span>
+                      </div>
+                      <div className="mt-1 text-base font-bold">
+                        Teslim Alan: {asg.employee_name}{' '}
+                        <span className="text-xs font-normal text-slate-500">
+                          ({[asg.employee_department, asg.employee_position].filter(Boolean).join(' • ')})
+                        </span>
+                      </div>
+                      <div className="text-xs text-slate-500">
+                        Teslim Eden: {asg.delivered_by_name} • Tarih:{' '}
+                        {new Date(asg.delivered_at).toLocaleString('tr-TR')}
+                      </div>
                     </div>
                   </div>
 
@@ -352,7 +429,8 @@ export default function AssignmentsPage() {
                   </table>
                 </div>
               </div>
-            ))}
+              )
+            })}
           </div>
         )}
       </div>

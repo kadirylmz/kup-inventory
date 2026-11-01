@@ -290,6 +290,45 @@ export default function ProjectsPage() {
     }
   }
 
+  const [selectedEquipIds, setSelectedEquipIds] = useState<string[]>([])
+
+  const handleBulkDeleteEquipment = async () => {
+    if (!activeProj || !selectedEquipIds.length) return
+    if (!confirm(`Seçili ${selectedEquipIds.length} adet proje hareket kaydını silmek istediğinize emin misiniz?\n\nSahadaki tüm ürünler otomatik olarak depoya geri aktarılacaktır.`)) return
+    try {
+      await api(`/projects/${activeProj.id}/equipment/bulk-delete`, {
+        method: 'DELETE',
+        body: JSON.stringify(selectedEquipIds),
+      })
+      toast.success(`${selectedEquipIds.length} adet ekipman kaydı silindi ve depoya iade edildi.`)
+      setSelectedEquipIds([])
+      qc.invalidateQueries({ queryKey: ['projects'] })
+      qc.invalidateQueries({ queryKey: ['products'] })
+      qc.invalidateQueries({ queryKey: ['assets'] })
+      qc.invalidateQueries({ queryKey: ['warehouse-stock'] })
+    } catch (err) {
+      toast.error((err as Error).message)
+    }
+  }
+
+  const handleClearAllProjectEquipment = async () => {
+    if (!activeProj || !activeProj.equipment.length) return
+    if (!confirm(`DİKKAT: "${activeProj.name}" projesindeki TÜM (${activeProj.equipment.length}) ekipman kayıtlarını silmek ve sahadaki tüm malzemeleri depoya geri çekmek istediğinize emin misiniz?`)) return
+    try {
+      await api(`/projects/${activeProj.id}/equipment/bulk-delete?all_clear=true`, {
+        method: 'DELETE',
+      })
+      toast.success('Projedeki tüm ekipman kayıtları silindi ve depoya döndürüldü.')
+      setSelectedEquipIds([])
+      qc.invalidateQueries({ queryKey: ['projects'] })
+      qc.invalidateQueries({ queryKey: ['products'] })
+      qc.invalidateQueries({ queryKey: ['assets'] })
+      qc.invalidateQueries({ queryKey: ['warehouse-stock'] })
+    } catch (err) {
+      toast.error((err as Error).message)
+    }
+  }
+
   const handleToggleProjectStatus = async (p: ProjectRecord, nextStatus: ProjectRecord['status']) => {
     try {
       await api(`/projects/${p.id}`, {
@@ -530,6 +569,28 @@ export default function ProjectsPage() {
                       Aynı Ürünleri Birleştir
                     </button>
                   )}
+
+                  {can('project.manage') && selectedEquipIds.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={handleBulkDeleteEquipment}
+                      className="inline-flex items-center gap-1 rounded-md bg-rose-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-rose-700 transition"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                      Seçilenleri Sil ({selectedEquipIds.length})
+                    </button>
+                  )}
+
+                  {can('project.manage') && activeProj.equipment.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={handleClearAllProjectEquipment}
+                      className="inline-flex items-center gap-1 rounded-md border border-rose-200 bg-rose-50/70 px-2.5 py-1 text-xs font-semibold text-rose-700 hover:bg-rose-100 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-300 transition"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                      Tümünü Temizle
+                    </button>
+                  )}
                 </div>
 
                 <button
@@ -561,6 +622,20 @@ export default function ProjectsPage() {
                     <table className="w-full text-sm">
                       <thead className="bg-slate-50 text-left text-xs uppercase text-slate-500 dark:bg-slate-800/50">
                         <tr>
+                          <th className="p-3 w-10">
+                            <input
+                              type="checkbox"
+                              checked={filteredEquipment.length > 0 && selectedEquipIds.length === filteredEquipment.length}
+                              onChange={() => {
+                                if (selectedEquipIds.length === filteredEquipment.length) {
+                                  setSelectedEquipIds([])
+                                } else {
+                                  setSelectedEquipIds(filteredEquipment.map(e => e.id))
+                                }
+                              }}
+                              className="rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+                            />
+                          </th>
                           <th className="p-3">Envanter Kodu</th>
                           <th className="p-3">Ekipman Adı</th>
                           <th className="p-3">Seri Numarası</th>
@@ -574,8 +649,22 @@ export default function ProjectsPage() {
                         </tr>
                       </thead>
                       <tbody>
-                        {filteredEquipment.map(eq => (
-                          <tr key={eq.id} className="border-t border-slate-100 hover:bg-slate-50/50 dark:border-slate-800 dark:hover:bg-slate-800/40">
+                        {filteredEquipment.map(eq => {
+                          const isSelected = selectedEquipIds.includes(eq.id)
+                          return (
+                          <tr key={eq.id} className={`border-t border-slate-100 hover:bg-slate-50/50 dark:border-slate-800 dark:hover:bg-slate-800/40 ${isSelected ? 'bg-indigo-50/40 dark:bg-indigo-950/20' : ''}`}>
+                            <td className="p-3">
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                onChange={() => {
+                                  setSelectedEquipIds(prev =>
+                                    prev.includes(eq.id) ? prev.filter(x => x !== eq.id) : [...prev, eq.id]
+                                  )
+                                }}
+                                className="rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+                              />
+                            </td>
                             <td className="p-3 font-mono text-xs font-bold text-brand-600">
                               {eq.inventory_code}
                             </td>
@@ -638,7 +727,8 @@ export default function ProjectsPage() {
                               </div>
                             </td>
                           </tr>
-                        ))}
+                        )
+                      })}
                       </tbody>
                     </table>
                   </div>

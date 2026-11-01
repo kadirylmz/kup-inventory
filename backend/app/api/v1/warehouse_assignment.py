@@ -765,6 +765,48 @@ def reverse_movement(
     return _to_movement_out(rev)
 
 
+@router.delete("/movements/bulk-delete")
+def bulk_delete_movements(
+    request: Request,
+    movement_ids: list[uuid.UUID] | None = None,
+    all_clear: bool = False,
+    db: Session = Depends(get_db),
+    me: User = Depends(require_permission("movement.approve")),
+):
+    """
+    Belirli veya tüm stok hareketlerini toplu siler.
+    İlişkili transfer ve bağ kayıtlarını temizler.
+    """
+    q = select(StockMovement).where(StockMovement.tenant_id == me.tenant_id)
+    if not all_clear and movement_ids:
+        q = q.where(StockMovement.id.in_(movement_ids))
+    elif not all_clear and not movement_ids:
+        raise HTTPException(400, "Silinecek hareketler belirtilmedi.")
+
+    movs = db.scalars(q).all()
+    count = 0
+    for mov in movs:
+        for trf in db.scalars(select(Transfer).where(Transfer.movement_id == mov.id)):
+            trf.movement_id = None
+        for rev in db.scalars(select(StockMovement).where(StockMovement.reverses_id == mov.id)):
+            rev.reverses_id = None
+        db.delete(mov)
+        count += 1
+
+    write_audit(
+        db,
+        tenant_id=me.tenant_id,
+        user_id=me.id,
+        action="movement.bulk_delete",
+        entity="stock_movement",
+        entity_id=None,
+        new={"deleted_count": count},
+        ip=client_ip(request),
+    )
+    db.commit()
+    return {"ok": True, "deleted_count": count}
+
+
 @router.delete("/movements/{movement_id}")
 def delete_movement(
     movement_id: uuid.UUID,
@@ -1474,6 +1516,74 @@ def return_assignment_item(
         for d in db.scalars(select(Department).where(Department.tenant_id == me.tenant_id)).all()
     }
     return _to_assignment_out(asg, dept_map)
+
+
+@router.delete("/assignments/bulk-delete")
+def bulk_delete_assignments(
+    request: Request,
+    assignment_ids: list[uuid.UUID] | None = None,
+    all_clear: bool = False,
+    db: Session = Depends(get_db),
+    me: User = Depends(require_permission("assignment.manage")),
+):
+    """
+    Seçilen veya tüm zimmet fişlerini toplu siler.
+    İade edilmemiş kalemler varsa otomatik depoya iade edilir.
+    """
+    q = select(Assignment).where(Assignment.tenant_id == me.tenant_id, Assignment.is_deleted.is_(False))
+    if not all_clear and assignment_ids:
+        q = q.where(Assignment.id.in_(assignment_ids))
+    elif not all_clear and not assignment_ids:
+        raise HTTPException(400, "Silinecek zimmetler belirtilmedi.")
+
+    def_wh = db.scalar(
+        select(Warehouse).where(
+            Warehouse.tenant_id == me.tenant_id,
+            Warehouse.is_deleted.is_(False),
+            Warehouse.code == "WH-CENTRAL",
+        )
+    ) or db.scalar(
+        select(Warehouse).where(
+            Warehouse.tenant_id == me.tenant_id,
+            Warehouse.is_deleted.is_(False),
+        ).order_by(Warehouse.created_at.asc())
+    )
+
+    asgs = db.scalars(q).all()
+    count = 0
+    now = datetime.now(timezone.utc)
+    for asg in asgs:
+        for item in asg.items:
+            if not item.is_returned:
+                rem = item.quantity - item.returned_quantity
+                if rem > 0:
+                    if item.asset:
+                        item.asset.status = "in_warehouse"
+                        item.asset.assigned_employee_name = None
+                        if def_wh:
+                            item.asset.warehouse_name = def_wh.name
+                    elif item.product and def_wh:
+                        _adjust_balance(db, me.tenant_id, item.product, def_wh.id, None, rem)
+                        if (item.product.quantity or Decimal("0")) > 0:
+                            item.product.status = "in_warehouse"
+                item.is_returned = True
+                item.returned_at = now
+        asg.is_deleted = True
+        asg.deleted_at = now
+        count += 1
+
+    write_audit(
+        db,
+        tenant_id=me.tenant_id,
+        user_id=me.id,
+        action="assignment.bulk_delete",
+        entity="assignment",
+        entity_id=None,
+        new={"deleted_count": count},
+        ip=client_ip(request),
+    )
+    db.commit()
+    return {"ok": True, "deleted_count": count}
 
 
 @router.delete("/assignments/{assignment_id}", status_code=204)

@@ -1536,3 +1536,87 @@ def delete_assignment(
     )
     db.commit()
     return None
+
+
+@router.delete("/assignments/{assignment_id}/items/{item_id}", status_code=204)
+def delete_assignment_item(
+    assignment_id: uuid.UUID,
+    item_id: uuid.UUID,
+    request: Request,
+    db: Session = Depends(get_db),
+    me: User = Depends(require_permission("assignment.manage")),
+):
+    """
+    Zimmet fişindeki belirli bir kalemi siler.
+    Eğer henüz iade edilmemişse kalan miktar otomatik olarak depoya geri iade edilir.
+    """
+    asg = db.get(Assignment, assignment_id)
+    if not asg or asg.tenant_id != me.tenant_id or asg.is_deleted:
+        raise HTTPException(404, "Zimmet kaydı bulunamadı.")
+
+    item = db.get(AssignmentItem, item_id)
+    if not item or item.assignment_id != asg.id:
+        raise HTTPException(404, "Zimmet kalemi bulunamadı.")
+
+    rem = item.quantity - item.returned_quantity
+    if rem > 0 and not item.is_returned:
+        def_wh = db.scalar(
+            select(Warehouse).where(
+                Warehouse.tenant_id == me.tenant_id,
+                Warehouse.is_deleted.is_(False),
+                Warehouse.code == "WH-CENTRAL",
+            )
+        ) or db.scalar(
+            select(Warehouse).where(
+                Warehouse.tenant_id == me.tenant_id,
+                Warehouse.is_deleted.is_(False),
+            ).order_by(Warehouse.created_at.asc())
+        )
+
+        if item.asset:
+            item.asset.status = "in_warehouse"
+            item.asset.assigned_employee_name = None
+            item.asset.is_deleted = False
+            item.asset.is_active = True
+            if def_wh:
+                item.asset.warehouse_name = def_wh.name
+            if item.asset.product and item.asset.product.is_deleted:
+                item.asset.product.is_deleted = False
+                item.asset.product.is_active = True
+                item.asset.product.status = "in_warehouse"
+        elif item.product:
+            if item.product.is_deleted:
+                item.product.is_deleted = False
+                item.product.is_active = True
+            if def_wh:
+                _adjust_balance(db, me.tenant_id, item.product, def_wh.id, None, rem)
+            else:
+                item.product.quantity = (item.product.quantity or Decimal("0")) + rem
+            if (item.product.quantity or Decimal("0")) > 0:
+                item.product.status = "in_warehouse"
+
+    prod_name = item.product.name if item.product else ""
+    db.delete(item)
+    db.flush()
+
+    # Eğer fişte hiç kalem kalmadıysa fişi de soft delete yap
+    remaining_items = [it for it in asg.items if it.id != item.id]
+    if not remaining_items:
+        asg.is_deleted = True
+        asg.deleted_at = datetime.now(timezone.utc)
+    else:
+        all_done = all(it.is_returned for it in remaining_items)
+        asg.status = "returned" if all_done else "active"
+
+    write_audit(
+        db,
+        tenant_id=me.tenant_id,
+        user_id=me.id,
+        action="assignment.delete_item",
+        entity="assignment",
+        entity_id=asg.id,
+        new={"assignment_no": asg.assignment_no, "deleted_item": prod_name, "returned_qty": str(rem)},
+        ip=client_ip(request),
+    )
+    db.commit()
+    return None

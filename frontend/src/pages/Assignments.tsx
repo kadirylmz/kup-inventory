@@ -176,6 +176,29 @@ export default function AssignmentsPage() {
     }
   }
 
+  const handleDeleteItem = async (asg: AssignmentRecord, item: AssignmentLine) => {
+    const rem = Number(item.quantity) - Number(item.returned_quantity)
+    const confirmMsg =
+      rem > 0
+        ? `Bu satır silindiğinde personeldeki ${rem} adet '${item.product_name}' otomatik olarak depoya geri aktarılacaktır. Silmek istediğinize emin misiniz?`
+        : `'${item.product_name}' kalemini bu zimmet fişinden silmek istediğinize emin misiniz?`
+
+    if (!window.confirm(confirmMsg)) return
+
+    try {
+      await api(`/assignments/${asg.id}/items/${item.id}`, { method: 'DELETE' })
+      toast.success(`'${item.product_name}' kalemi zimmetten silindi.`)
+      qc.invalidateQueries({ queryKey: ['assignments'] })
+      qc.invalidateQueries({ queryKey: ['products'] })
+      qc.invalidateQueries({ queryKey: ['employees'] })
+      qc.invalidateQueries({ queryKey: ['assets'] })
+      qc.invalidateQueries({ queryKey: ['warehouse-stock'] })
+      qc.invalidateQueries({ queryKey: ['movements'] })
+    } catch (err) {
+      toast.error((err as Error).message)
+    }
+  }
+
   const inputCls =
     'w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand-500 dark:border-slate-700 dark:bg-slate-800'
 
@@ -296,20 +319,31 @@ export default function AssignmentsPage() {
                               )}
                             </td>
                             <td className="p-2.5 text-right">
-                              {!it.is_returned && can('assignment.manage') ? (
-                                <button
-                                  onClick={() => {
-                                    setRetQty(String(rem))
-                                    setRetWhId(warehouses[0]?.id || '')
-                                    setReturnModal({ assignment: asg, item: it })
-                                  }}
-                                  className="inline-flex items-center gap-1 rounded bg-emerald-600 px-2.5 py-1 font-semibold text-white hover:bg-emerald-700"
-                                >
-                                  <RotateCcw className="h-3 w-3" /> İade Al
-                                </button>
-                              ) : (
-                                <span className="text-emerald-600 font-semibold">İade Tamamlandı</span>
-                              )}
+                              <div className="inline-flex items-center justify-end gap-1.5">
+                                {!it.is_returned && can('assignment.manage') ? (
+                                  <button
+                                    onClick={() => {
+                                      setRetQty(String(rem))
+                                      setRetWhId(warehouses[0]?.id || '')
+                                      setReturnModal({ assignment: asg, item: it })
+                                    }}
+                                    className="inline-flex items-center gap-1 rounded bg-emerald-600 px-2.5 py-1 font-semibold text-white hover:bg-emerald-700"
+                                  >
+                                    <RotateCcw className="h-3 w-3" /> İade Al
+                                  </button>
+                                ) : (
+                                  <span className="text-emerald-600 font-semibold">İade Tamamlandı</span>
+                                )}
+                                {can('assignment.manage') && (
+                                  <button
+                                    onClick={() => handleDeleteItem(asg, it)}
+                                    title="Bu kalemi zimmet fişinden sil (Personeldeyse depoya döner)"
+                                    className="rounded p-1 text-slate-400 hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-950/40 transition"
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </button>
+                                )}
+                              </div>
                             </td>
                           </tr>
                         )

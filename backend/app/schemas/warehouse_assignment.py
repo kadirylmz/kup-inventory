@@ -92,6 +92,8 @@ class StockBalanceOut(BaseModel):
     location_id: uuid.UUID | None
     location_name: str | None
     quantity: Decimal
+    source_type: str = "warehouse"  # 'warehouse', 'project', 'assignment'
+    source_detail: str | None = None  # e.g. "Proje: Sahne Kurulumu" or "Zimmet: Ahmet Yılmaz"
 
 
 class StockBalanceUpdate(BaseModel):

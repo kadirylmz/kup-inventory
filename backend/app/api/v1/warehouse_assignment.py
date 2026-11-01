@@ -132,17 +132,8 @@ def _adjust_balance(
     bal.quantity = new_qty
     db.flush()
 
-    # Katalog toplam miktarını da senkronize et
-    total = (
-        db.scalar(
-            select(func.coalesce(func.sum(StockBalance.quantity), 0)).where(
-                StockBalance.tenant_id == tenant_id,
-                StockBalance.product_id == product.id,
-            )
-        )
-        or Decimal("0")
-    )
-    product.quantity = Decimal(str(total))
+    # Katalog toplam miktarını da senkronize et (Depo + Zimmet + Proje)
+    _sync_product_quantity_from_balances(db, tenant_id, product)
     db.flush()
     return bal
 
@@ -278,11 +269,15 @@ def list_warehouse_stock(
     db: Session = Depends(get_db),
     me: User = Depends(require_permission("warehouse.view")),
 ):
+    selected_wh = db.get(Warehouse, warehouse_id) if warehouse_id else None
+
+    # Normal depo stok bakiyeleri
     q = select(StockBalance).where(StockBalance.tenant_id == me.tenant_id, StockBalance.quantity > 0)
     if warehouse_id:
         q = q.where(StockBalance.warehouse_id == warehouse_id)
     rows = db.scalars(q).all()
-    return [
+
+    results: list[StockBalanceOut] = [
         StockBalanceOut(
             id=r.id,
             product_id=r.product_id,
@@ -294,15 +289,82 @@ def list_warehouse_stock(
             location_id=r.location_id,
             location_name=r.location.name if r.location else None,
             quantity=r.quantity,
+            source_type="warehouse",
+            source_detail=r.location.name if r.location else None,
         )
         for r in rows
         if not r.product or not r.product.is_deleted
     ]
 
+    # Eğer seçili depo veya filtrelenen depo 'office' (Ofis) ise: Personel zimmetindeki ürünleri de göster
+    if selected_wh and selected_wh.warehouse_type == "office":
+        asg_items = db.scalars(
+            select(AssignmentItem)
+            .join(Assignment, Assignment.id == AssignmentItem.assignment_id)
+            .where(
+                Assignment.tenant_id == me.tenant_id,
+                Assignment.is_deleted.is_(False),
+                AssignmentItem.is_returned.is_(False),
+            )
+        ).all()
+        for ai in asg_items:
+            rem = ai.quantity - ai.returned_quantity
+            if rem > 0 and ai.product and not ai.product.is_deleted:
+                emp_name = ai.assignment.employee.full_name if (ai.assignment and ai.assignment.employee) else "Personel"
+                asg_no = ai.assignment.assignment_no if ai.assignment else ""
+                results.append(
+                    StockBalanceOut(
+                        id=ai.id,
+                        product_id=ai.product_id,
+                        product_name=ai.product.name,
+                        inventory_code=ai.product.inventory_code,
+                        unit=ai.product.unit or "Adet",
+                        warehouse_id=selected_wh.id,
+                        warehouse_name=selected_wh.name,
+                        location_id=None,
+                        location_name=f"Zimmette: {emp_name}",
+                        quantity=rem,
+                        source_type="assignment",
+                        source_detail=f"Zimmet No: {asg_no} ({emp_name})",
+                    )
+                )
+
+    # Eğer seçili depo veya filtrelenen depo 'project' (Proje Deposu) ise: Projelerdeki aktif ürünleri de göster
+    if selected_wh and selected_wh.warehouse_type == "project":
+        from app.models.project_license_maintenance import ProjectAsset
+        proj_items = db.scalars(
+            select(ProjectAsset).where(
+                ProjectAsset.tenant_id == me.tenant_id,
+                ProjectAsset.status == "in_project",
+            )
+        ).all()
+        for pa in proj_items:
+            rem = pa.quantity - pa.returned_quantity
+            if rem > 0 and pa.product and not pa.product.is_deleted:
+                proj_name = pa.project.name if pa.project else "Proje"
+                results.append(
+                    StockBalanceOut(
+                        id=pa.id,
+                        product_id=pa.product_id,
+                        product_name=pa.product.name,
+                        inventory_code=pa.product.inventory_code,
+                        unit=pa.product.unit or "Adet",
+                        warehouse_id=selected_wh.id,
+                        warehouse_name=selected_wh.name,
+                        location_id=None,
+                        location_name=f"Projede: {proj_name}",
+                        quantity=rem,
+                        source_type="project",
+                        source_detail=f"Proje: {proj_name}",
+                    )
+                )
+
+    return results
+
 
 def _sync_product_quantity_from_balances(db: Session, tenant_id: uuid.UUID, product: Product | None) -> None:
     if product and product.tracking_type == "quantity":
-        total = (
+        wh_qty = (
             db.scalar(
                 select(func.coalesce(func.sum(StockBalance.quantity), 0)).where(
                     StockBalance.tenant_id == tenant_id,
@@ -311,7 +373,26 @@ def _sync_product_quantity_from_balances(db: Session, tenant_id: uuid.UUID, prod
             )
             or Decimal("0")
         )
-        product.quantity = Decimal(str(total))
+        asg_qty = (
+            db.scalar(
+                select(func.coalesce(func.sum(AssignmentItem.quantity - AssignmentItem.returned_quantity), 0)).where(
+                    AssignmentItem.product_id == product.id,
+                    AssignmentItem.is_returned.is_(False),
+                )
+            )
+            or Decimal("0")
+        )
+        from app.models.project_license_maintenance import ProjectAsset
+        proj_qty = (
+            db.scalar(
+                select(func.coalesce(func.sum(ProjectAsset.quantity - ProjectAsset.returned_quantity), 0)).where(
+                    ProjectAsset.product_id == product.id,
+                    ProjectAsset.status == "in_project",
+                )
+            )
+            or Decimal("0")
+        )
+        product.quantity = Decimal(str(wh_qty + asg_qty + proj_qty))
 
 
 @router.patch("/warehouses/stock/{balance_id}", response_model=StockBalanceOut)

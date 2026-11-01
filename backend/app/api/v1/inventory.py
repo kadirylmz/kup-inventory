@@ -573,6 +573,8 @@ def _to_product_out(
         po.assigned_quantity = assigned_quantities.get(p.id, Decimal("0"))
     if warehouse_quantities and p.id in warehouse_quantities:
         po.warehouse_quantity = warehouse_quantities[p.id]
+    elif warehouse_quantities is not None:
+        po.warehouse_quantity = Decimal("0")
     else:
         po.warehouse_quantity = p.quantity or Decimal("0")
     return po

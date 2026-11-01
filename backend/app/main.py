@@ -3,9 +3,11 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 
+import app.models  # noqa: F401
 from app.api.v1.router import api_router
 from app.core.config import get_settings
-from app.db.session import SessionLocal
+from app.db.base import Base
+from app.db.session import SessionLocal, engine
 from app.seed.core import seed_core
 
 
@@ -13,6 +15,7 @@ from app.seed.core import seed_core
 async def lifespan(app: FastAPI):
     if get_settings().secret_key == "CHANGE_ME":
         print("UYARI: SECRET_KEY varsayılan değerde! Üretimde mutlaka değiştirin.")
+    Base.metadata.create_all(bind=engine)
     with SessionLocal() as db:
         seed_core(db)
     yield

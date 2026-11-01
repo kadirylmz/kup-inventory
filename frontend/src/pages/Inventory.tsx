@@ -9,6 +9,7 @@ import {
   Edit3,
   Eye,
   FileText,
+  Flame,
   Image as ImageIcon,
   Layers,
   Loader2,
@@ -551,6 +552,26 @@ export default function InventoryPage() {
     }
   }
 
+  const handleScrapProduct = async (p: ProductItem) => {
+    if (
+      !window.confirm(
+        `"${p.name}" (${p.inventory_code}) ürününü ve varsa bağlı tüm cihazlarını HURDAYA ayırmak istediğinize emin misiniz?`
+      )
+    ) {
+      return
+    }
+    try {
+      await api(`/products/${p.id}/scrap`, { method: 'POST' })
+      toast.success(`"${p.name}" başarıyla hurdaya ayrıldı.`)
+      if (selectedProduct?.id === p.id) {
+        setSelectedProduct({ ...selectedProduct, status: 'scrapped' })
+      }
+      refreshAll()
+    } catch (err) {
+      toast.error((err as Error).message)
+    }
+  }
+
   const openAssetEditModal = (a: AssetItem) => {
     setEditingAsset(a)
     setASerial(a.serial_number)
@@ -595,6 +616,23 @@ export default function InventoryPage() {
     try {
       await api(`/assets/${a.id}`, { method: 'DELETE' })
       toast.success('Seri numaralı cihaz silindi.')
+      refreshAll()
+    } catch (err) {
+      toast.error((err as Error).message)
+    }
+  }
+
+  const handleScrapAsset = async (a: AssetItem) => {
+    if (
+      !window.confirm(
+        `${a.serial_number} (${a.inventory_code}) seri numaralı cihazı HURDAYA ayırmak istediğinize emin misiniz?`
+      )
+    ) {
+      return
+    }
+    try {
+      await api(`/assets/${a.id}/scrap`, { method: 'POST' })
+      toast.success(`${a.serial_number} hurdaya ayrıldı.`)
       refreshAll()
     } catch (err) {
       toast.error((err as Error).message)
@@ -1027,6 +1065,15 @@ export default function InventoryPage() {
                             >
                               <Eye className="h-3.5 w-3.5" />
                             </button>
+                            {can('product.update') && p.status !== 'scrapped' && (
+                              <button
+                                onClick={() => handleScrapProduct(p)}
+                                title="Hurdaya Ayır"
+                                className="inline-flex items-center gap-1 rounded-lg border border-amber-200 bg-amber-50/60 px-2 py-1 text-xs font-semibold text-amber-700 hover:bg-amber-100 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-300"
+                              >
+                                <Flame className="h-3.5 w-3.5" /> Hurdaya
+                              </button>
+                            )}
                             {can('product.delete') && (
                               <button
                                 onClick={() => handleDeleteProduct(p)}
@@ -1161,6 +1208,15 @@ export default function InventoryPage() {
                             >
                               <QrCode className="h-3.5 w-3.5" /> QR
                             </button>
+                            {can('product.update') && a.status !== 'scrapped' && (
+                              <button
+                                onClick={() => handleScrapAsset(a)}
+                                title="Hurdaya Ayır"
+                                className="inline-flex items-center gap-1 rounded-lg border border-amber-200 bg-amber-50/60 px-2 py-1 text-xs font-semibold text-amber-700 hover:bg-amber-100 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-300"
+                              >
+                                <Flame className="h-3.5 w-3.5" /> Hurdaya
+                              </button>
+                            )}
                             {can('product.delete') && (
                               <button
                                 onClick={() => handleDeleteAsset(a)}
@@ -1871,6 +1927,14 @@ export default function InventoryPage() {
                 </p>
               </div>
               <div className="flex items-center gap-2">
+                {can('product.update') && selectedProduct.status !== 'scrapped' && (
+                  <button
+                    onClick={() => handleScrapProduct(selectedProduct)}
+                    className="flex items-center gap-1 rounded-lg border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-700 hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-950/50 dark:text-amber-300"
+                  >
+                    <Flame className="h-3.5 w-3.5" /> Hurdaya Ayır
+                  </button>
+                )}
                 {can('product.update') && (
                   <button
                     onClick={() => openEditModal(selectedProduct)}
@@ -2134,6 +2198,14 @@ export default function InventoryPage() {
                                 >
                                   QR
                                 </button>
+                                {can('product.update') && a.status !== 'scrapped' && (
+                                  <button
+                                    onClick={() => handleScrapAsset(a)}
+                                    className="font-semibold text-amber-600 hover:underline"
+                                  >
+                                    Hurdaya
+                                  </button>
+                                )}
                                 {can('product.delete') && (
                                   <button
                                     onClick={() => handleDeleteAsset(a)}

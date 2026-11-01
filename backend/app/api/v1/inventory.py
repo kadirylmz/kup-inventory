@@ -655,6 +655,18 @@ def list_products(
                 Product.id.in_(wh_asset_prod_ids),
             )
         )
+    elif status == "scrapped":
+        scrapped_asset_prod_ids = select(Asset.product_id).where(
+            Asset.tenant_id == me.tenant_id,
+            Asset.is_deleted.is_(False),
+            Asset.status == "scrapped",
+        )
+        stmt = stmt.where(
+            or_(
+                Product.status == "scrapped",
+                Product.id.in_(scrapped_asset_prod_ids),
+            )
+        )
     elif status:
         stmt = stmt.where(Product.status == status)
     if q:
@@ -1125,6 +1137,55 @@ def delete_product(
     return {"ok": True}
 
 
+@router.post("/products/{product_id}/scrap", response_model=ProductOut)
+def scrap_product(
+    product_id: uuid.UUID,
+    request: Request,
+    db: Session = Depends(get_db),
+    me: User = Depends(require_permission("product.update")),
+):
+    """Ürünü ve bağlı tüm seri varlıklarını doğrudan hurdaya ayırır."""
+    from app.models.warehouse_assignment import StockBalance
+
+    p = db.get(Product, product_id)
+    if not p or p.tenant_id != me.tenant_id or p.is_deleted:
+        raise HTTPException(404, "Ürün bulunamadı.")
+
+    old_status = p.status
+    p.status = "scrapped"
+
+    # Bağlı tüm seri cihazların statüsünü de hurdaya (scrapped) çek
+    for a in db.scalars(select(Asset).where(Asset.tenant_id == me.tenant_id, Asset.product_id == p.id, Asset.is_deleted.is_(False))):
+        a.status = "scrapped"
+
+    # Depo bakiye sıfırla (hurda artık depoda kullanılabilir stok değil)
+    for sb in db.scalars(select(StockBalance).where(StockBalance.tenant_id == me.tenant_id, StockBalance.product_id == p.id)):
+        sb.quantity = Decimal("0")
+
+    write_audit(
+        db,
+        tenant_id=me.tenant_id,
+        user_id=me.id,
+        action="product.scrap",
+        entity="product",
+        entity_id=p.id,
+        old={"status": old_status},
+        new={"status": "scrapped"},
+        ip=client_ip(request),
+    )
+    db.commit()
+    db.refresh(p)
+    cnt = (
+        db.scalar(
+            select(func.count(Asset.id)).where(
+                Asset.tenant_id == me.tenant_id, Asset.product_id == p.id, Asset.is_deleted.is_(False)
+            )
+        )
+        or 0
+    )
+    return _to_product_out(p, {p.id: cnt})
+
+
 # ==========================================
 # 5. ASSETS (SERİ NUMARALI VARLIKLAR)
 # ==========================================
@@ -1376,6 +1437,37 @@ def delete_asset(
     )
     db.commit()
     return {"ok": True}
+
+
+@router.post("/assets/{asset_id}/scrap", response_model=AssetOut)
+def scrap_asset(
+    asset_id: uuid.UUID,
+    request: Request,
+    db: Session = Depends(get_db),
+    me: User = Depends(require_permission("product.update")),
+):
+    """Tek bir seri numaralı cihazı doğrudan hurdaya ayırır."""
+    a = db.get(Asset, asset_id)
+    if not a or a.tenant_id != me.tenant_id or a.is_deleted:
+        raise HTTPException(404, "Cihaz bulunamadı.")
+
+    old_status = a.status
+    a.status = "scrapped"
+
+    write_audit(
+        db,
+        tenant_id=me.tenant_id,
+        user_id=me.id,
+        action="asset.scrap",
+        entity="asset",
+        entity_id=a.id,
+        old={"status": old_status},
+        new={"status": "scrapped"},
+        ip=client_ip(request),
+    )
+    db.commit()
+    db.refresh(a)
+    return _to_asset_out(a)
 
 
 # ==========================================

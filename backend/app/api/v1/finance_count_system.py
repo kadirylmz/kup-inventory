@@ -156,6 +156,88 @@ def upsert_exchange_rate(
     return {"id": rec.id, "currency_code": rec.currency_code, "rate_to_try": float(rec.rate_to_try)}
 
 
+@router.post("/exchange-rates/fetch-live")
+def fetch_live_exchange_rates(
+    request: Request,
+    db: Session = Depends(get_db),
+    me: User = Depends(require_permission("setting.manage")),
+):
+    """
+    Canlı piyasa döviz kurlarını (USD ve EUR) otomatik çeker ve sisteme kaydeder.
+    """
+    import json
+    import urllib.request
+    from datetime import date
+
+    today = date.today()
+    live_data: dict[str, float] = {}
+    source_name = "online_rates"
+
+    try:
+        req = urllib.request.Request(
+            "https://open.er-api.com/v6/latest/USD",
+            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"},
+        )
+        with urllib.request.urlopen(req, timeout=5) as res:
+            d = json.loads(res.read().decode())
+            usd = round(float(d["rates"]["TRY"]), 4)
+            eur = round(usd / float(d["rates"]["EUR"]), 4)
+            live_data = {"USD": usd, "EUR": eur}
+            source_name = "open.er-api.com"
+    except Exception:
+        try:
+            req = urllib.request.Request(
+                "https://api.exchangerate-api.com/v4/latest/USD",
+                headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"},
+            )
+            with urllib.request.urlopen(req, timeout=5) as res:
+                d = json.loads(res.read().decode())
+                usd = round(float(d["rates"]["TRY"]), 4)
+                eur = round(usd / float(d["rates"]["EUR"]), 4)
+                live_data = {"USD": usd, "EUR": eur}
+                source_name = "exchangerate-api.com"
+        except Exception as e:
+            raise HTTPException(502, f"Canlı kur servisine ulaşılamadı: {e}")
+
+    saved: dict[str, float] = {}
+    for code, rate_val in live_data.items():
+        existing = db.scalar(
+            select(ExchangeRate).where(
+                ExchangeRate.tenant_id == me.tenant_id,
+                ExchangeRate.rate_date == today,
+                ExchangeRate.currency_code == code,
+            )
+        )
+        dec_val = Decimal(str(rate_val))
+        if existing:
+            existing.rate_to_try = dec_val
+            existing.source = "auto"
+            existing.note = f"Otomatik çekildi ({source_name})"
+        else:
+            rec = ExchangeRate(
+                tenant_id=me.tenant_id,
+                rate_date=today,
+                currency_code=code,
+                rate_to_try=dec_val,
+                source="auto",
+                note=f"Otomatik çekildi ({source_name})",
+            )
+            db.add(rec)
+        saved[code] = rate_val
+
+    write_audit(
+        db,
+        tenant_id=me.tenant_id,
+        user_id=me.id,
+        action="exchange_rate.fetch_live",
+        entity="exchange_rate",
+        new={"rates": saved, "source": source_name, "date": str(today)},
+        ip=client_ip(request),
+    )
+    db.commit()
+    return {"ok": True, "date": str(today), "source": source_name, "rates": saved}
+
+
 class ValuationCreate(BaseModel):
     product_id: uuid.UUID
     asset_id: uuid.UUID | None = None

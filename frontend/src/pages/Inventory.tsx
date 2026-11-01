@@ -5,6 +5,7 @@ import {
   Briefcase,
   Camera,
   Cpu,
+  Download,
   Edit3,
   Eye,
   FileText,
@@ -176,6 +177,14 @@ export default function InventoryPage() {
   const [shiftAssetId, setShiftAssetId] = useState('')
   const [shiftQty, setShiftQty] = useState('1')
   const [shiftNote, setShiftNote] = useState('')
+
+  // Fotoğraf ve Belge Önizleme Modalı
+  const [previewMedia, setPreviewMedia] = useState<{
+    url: string
+    title: string
+    isImage: boolean
+    downloadName?: string
+  } | null>(null)
 
   // Ürün Oluşturma / Düzenleme Form State
   const [fName, setFName] = useState('')
@@ -851,7 +860,17 @@ export default function InventoryPage() {
                             <img
                               src={p.primary_image_url}
                               alt={p.name}
-                              className="h-10 w-10 rounded-lg object-cover ring-1 ring-slate-200 dark:ring-slate-700"
+                              onClick={e => {
+                                e.stopPropagation()
+                                setPreviewMedia({
+                                  url: p.primary_image_url!,
+                                  title: p.name,
+                                  isImage: true,
+                                  downloadName: `${p.inventory_code}_foto.jpg`,
+                                })
+                              }}
+                              title="Fotoğrafı büyüt / incele"
+                              className="h-10 w-10 cursor-zoom-in rounded-lg object-cover ring-1 ring-slate-200 hover:ring-2 hover:ring-brand-500 dark:ring-slate-700"
                             />
                           ) : (
                             <div className="grid h-10 w-10 place-items-center rounded-lg bg-slate-100 text-slate-400 dark:bg-slate-800">
@@ -1820,20 +1839,28 @@ export default function InventoryPage() {
                 ) : (
                   <div className="grid grid-cols-3 gap-3 sm:grid-cols-4">
                     {prodImages.map(img => (
-                      <a
+                      <div
                         key={img.id}
-                        href={img.url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="group relative overflow-hidden rounded-xl border border-slate-200 dark:border-slate-700"
+                        onClick={() =>
+                          setPreviewMedia({
+                            url: img.url,
+                            title: img.caption || img.original_name,
+                            isImage: true,
+                            downloadName: img.original_name,
+                          })
+                        }
+                        className="group relative cursor-pointer overflow-hidden rounded-xl border border-slate-200 transition hover:ring-2 hover:ring-brand-500 dark:border-slate-700"
                       >
-                        <img src={img.url} alt={img.original_name} className="h-24 w-full object-cover" />
+                        <img src={img.url} alt={img.original_name} className="h-24 w-full object-cover transition group-hover:scale-105" />
                         {img.is_primary && (
                           <span className="absolute top-1 left-1 rounded bg-brand-600 px-1.5 py-0.5 text-[10px] font-semibold text-white">
                             Kapak
                           </span>
                         )}
-                      </a>
+                        <div className="absolute inset-0 flex items-center justify-center bg-black/30 opacity-0 transition group-hover:opacity-100">
+                          <Eye className="h-5 w-5 text-white" />
+                        </div>
+                      </div>
                     ))}
                   </div>
                 )}
@@ -1857,20 +1884,38 @@ export default function InventoryPage() {
                 </div>
                 {prodDocs.length > 0 && (
                   <div className="space-y-1.5">
-                    {prodDocs.map(d => (
-                      <a
-                        key={d.id}
-                        href={d.url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="flex items-center justify-between rounded-lg border border-slate-200 px-3 py-2 text-xs hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-800"
-                      >
-                        <span className="flex items-center gap-2 font-medium">
-                          <FileText className="h-4 w-4 text-brand-600" /> {d.title}
-                        </span>
-                        <span className="text-slate-400">{(d.size_bytes / 1024).toFixed(1)} KB</span>
-                      </a>
-                    ))}
+                    {prodDocs.map(d => {
+                      const isImg = /\.(jpg|jpeg|png|webp)$/i.test(d.original_name)
+                      return (
+                        <div
+                          key={d.id}
+                          onClick={() =>
+                            setPreviewMedia({
+                              url: d.url,
+                              title: d.title || d.original_name,
+                              isImage: isImg,
+                              downloadName: d.original_name,
+                            })
+                          }
+                          className="flex cursor-pointer items-center justify-between rounded-lg border border-slate-200 px-3 py-2 text-xs transition hover:bg-slate-50 hover:border-brand-300 dark:border-slate-800 dark:hover:bg-slate-800"
+                        >
+                          <span className="flex items-center gap-2 font-medium">
+                            <FileText className="h-4 w-4 text-brand-600" /> {d.title}
+                            {d.doc_type && (
+                              <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-500 uppercase dark:bg-slate-800">
+                                {d.doc_type === 'invoice' ? 'Fatura' : d.doc_type}
+                              </span>
+                            )}
+                          </span>
+                          <div className="flex items-center gap-2">
+                            <span className="text-slate-400">{(d.size_bytes / 1024).toFixed(1)} KB</span>
+                            <span className="rounded p-1 text-slate-400 hover:text-brand-600">
+                              <Eye className="h-3.5 w-3.5" />
+                            </span>
+                          </div>
+                        </div>
+                      )
+                    })}
                   </div>
                 )}
               </div>
@@ -1991,6 +2036,60 @@ export default function InventoryPage() {
               <p className="mt-2 text-[11px] text-slate-400">
                 QR içerisinde fiyat/fatura gibi hassas veriler yer almaz.
               </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* FOTOĞRAF VE FATURA / BELGE ÖNİZLEME & İNDİRME MODALI */}
+      {previewMedia && (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-black/75 p-4 backdrop-blur-xs">
+          <div className="flex h-full max-h-[90vh] w-full max-w-4xl flex-col rounded-2xl bg-white shadow-2xl dark:bg-slate-900">
+            {/* Modal Üst Bar */}
+            <div className="flex items-center justify-between border-b border-slate-200 px-5 py-3 dark:border-slate-800">
+              <div className="flex items-center gap-2">
+                {previewMedia.isImage ? (
+                  <ImageIcon className="h-5 w-5 text-brand-600" />
+                ) : (
+                  <FileText className="h-5 w-5 text-brand-600" />
+                )}
+                <span className="font-bold text-sm truncate max-w-md">{previewMedia.title}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <a
+                  href={previewMedia.url}
+                  download={previewMedia.downloadName || 'dosya'}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-semibold text-white shadow-xs hover:bg-brand-700"
+                  title="Dosyayı İndir"
+                >
+                  <Download className="h-3.5 w-3.5" /> İndir
+                </a>
+                <button
+                  onClick={() => setPreviewMedia(null)}
+                  className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Önizleme Alanı */}
+            <div className="flex flex-1 items-center justify-center overflow-auto p-4 bg-slate-100/50 dark:bg-slate-950/50">
+              {previewMedia.isImage ? (
+                <img
+                  src={previewMedia.url}
+                  alt={previewMedia.title}
+                  className="max-h-[75vh] max-w-full rounded-lg object-contain shadow-md"
+                />
+              ) : (
+                <iframe
+                  src={previewMedia.url}
+                  title={previewMedia.title}
+                  className="h-full min-h-[75vh] w-full rounded-lg border border-slate-200 bg-white shadow-sm dark:border-slate-800"
+                />
+              )}
             </div>
           </div>
         </div>

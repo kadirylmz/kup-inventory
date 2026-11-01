@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { CheckCircle2, Coins, FileEdit, Plus, Search, Sparkles, TrendingUp } from 'lucide-react'
 import { toast } from 'sonner'
 import { api, ApiError } from '@/lib/api'
+import { fmtMoney, fmtQty } from '@/lib/format'
 
 interface ThreeValueItem {
   product_id: string
@@ -177,8 +178,7 @@ export default function ValuationsPage() {
     }
   }
 
-  const fmt = (n: number) =>
-    new Intl.NumberFormat('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n || 0)
+  const fmt = (n: number) => fmtMoney(n)
 
   return (
     <div className="space-y-5">
@@ -297,7 +297,7 @@ export default function ValuationsPage() {
                   <td className="px-4 py-2.5 font-mono text-xs font-semibold text-brand-600">{it.inventory_code}</td>
                   <td className="px-4 py-2.5 font-medium">{it.name}</td>
                   <td className="px-4 py-2.5">
-                    {it.quantity} {it.unit}
+                    {fmtQty(it.quantity)} {it.unit}
                   </td>
                   <td className="px-4 py-2.5 text-xs text-slate-500">
                     {fmt(it.original_purchase_cost)} {it.purchase_currency}

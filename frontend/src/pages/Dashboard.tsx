@@ -16,6 +16,7 @@ import {
 } from 'lucide-react'
 import { Bar, BarChart, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { api } from '@/lib/api'
+import { fmtMoney, fmtQty } from '@/lib/format'
 
 interface SummaryData {
   total_product_cards: number
@@ -35,9 +36,9 @@ const COLORS = ['#4f46e5', '#0ea5e9', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6'
 function fmtCurrencyMap(map: Record<string, number> | undefined) {
   if (!map) return '0 ₺'
   const parts: string[] = []
-  if (map.TRY) parts.push(`${map.TRY.toLocaleString('tr-TR', { maximumFractionDigits: 2 })} ₺`)
-  if (map.EUR) parts.push(`${map.EUR.toLocaleString('tr-TR', { maximumFractionDigits: 2 })} €`)
-  if (map.USD) parts.push(`${map.USD.toLocaleString('tr-TR', { maximumFractionDigits: 2 })} $`)
+  if (map.TRY) parts.push(`${fmtMoney(map.TRY)} ₺`)
+  if (map.EUR) parts.push(`${fmtMoney(map.EUR)} €`)
+  if (map.USD) parts.push(`${fmtMoney(map.USD)} $`)
   return parts.length ? parts.join(' + ') : '0 ₺'
 }
 
@@ -72,7 +73,7 @@ export default function DashboardPage() {
     },
     {
       label: 'Toplam Fiziksel Ürün Adedi',
-      value: (data?.total_physical_units ?? 0).toLocaleString('tr-TR'),
+      value: fmtQty(data?.total_physical_units ?? 0),
       sub: 'Seri cihazlar + sarf/kablo miktarları',
       icon: Boxes,
       color: 'bg-sky-500/10 text-sky-600 dark:text-sky-400',

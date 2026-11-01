@@ -464,11 +464,27 @@ def delete_supplier(
 # ==========================================
 # 4. PRODUCTS (KATALOG & ADET BAZLI ÜRÜNLER)
 # ==========================================
+def _get_code_format(db: Session, tenant_id: uuid.UUID) -> tuple[str, int]:
+    from app.models.core import Setting
+
+    row = db.scalar(select(Setting).where(Setting.tenant_id == tenant_id, Setting.key == "general"))
+    prefix = "KUP"
+    digits = 2
+    if row and isinstance(row.value, dict):
+        prefix = str(row.value.get("code_prefix") or "KUP").strip().upper()
+        try:
+            digits = max(1, min(6, int(row.value.get("code_padding_digits", 2))))
+        except (TypeError, ValueError):
+            digits = 2
+    return prefix, digits
+
+
 def _next_inventory_code(db: Session, tenant_id: uuid.UUID, prefix: str) -> str:
+    sys_prefix, digits = _get_code_format(db, tenant_id)
     count = db.scalar(select(func.count(Product.id)).where(Product.tenant_id == tenant_id)) or 0
     seq = count + 1
     while True:
-        code = f"KUP-{prefix}-{seq:04d}"
+        code = f"{sys_prefix}-{prefix}-{seq:0{digits}d}"
         exists = db.scalar(select(Product.id).where(Product.tenant_id == tenant_id, Product.inventory_code == code))
         if not exists:
             return code
@@ -476,9 +492,10 @@ def _next_inventory_code(db: Session, tenant_id: uuid.UUID, prefix: str) -> str:
 
 
 def _next_asset_code(db: Session, tenant_id: uuid.UUID, prod_code: str, start_idx: int) -> str:
+    _, digits = _get_code_format(db, tenant_id)
     seq = start_idx
     while True:
-        code = f"{prod_code}-{seq:03d}"
+        code = f"{prod_code}-{seq:0{digits}d}"
         exists = db.scalar(select(Asset.id).where(Asset.tenant_id == tenant_id, Asset.inventory_code == code))
         if not exists:
             return code

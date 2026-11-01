@@ -1478,6 +1478,10 @@ class SettingsUpdateIn(BaseModel):
     auto_backup_enabled: bool = True
     auto_backup_time: str = "02:00"
     lan_domain: str = "http://inventory.local"
+    number_decimals: int = 0
+    trim_trailing_zeros: bool = True
+    code_padding_digits: int = 2
+    code_prefix: str = "KUP"
 
 
 @router.get("/settings")

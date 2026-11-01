@@ -12,6 +12,7 @@ import {
 import { toast } from 'sonner'
 import { api } from '@/lib/api'
 import { useAuth } from '@/lib/auth'
+import { fmtMoney, fmtQty } from '@/lib/format'
 import type { WarehouseItem } from '@/pages/Warehouses'
 import type { AssetItem, ProductItem } from '@/pages/Inventory'
 
@@ -65,9 +66,9 @@ const PROJ_STATUS: Record<string, { label: string; cls: string }> = {
 function fmtMoneyMap(m: Record<string, number> | undefined) {
   if (!m) return '0 ₺'
   const parts: string[] = []
-  if (m.TRY) parts.push(`${m.TRY.toLocaleString('tr-TR', { maximumFractionDigits: 2 })} ₺`)
-  if (m.EUR) parts.push(`${m.EUR.toLocaleString('tr-TR', { maximumFractionDigits: 2 })} €`)
-  if (m.USD) parts.push(`${m.USD.toLocaleString('tr-TR', { maximumFractionDigits: 2 })} $`)
+  if (m.TRY) parts.push(`${fmtMoney(m.TRY)} ₺`)
+  if (m.EUR) parts.push(`${fmtMoney(m.EUR)} €`)
+  if (m.USD) parts.push(`${fmtMoney(m.USD)} $`)
   return parts.length ? parts.join(' + ') : '0 ₺'
 }
 
@@ -371,19 +372,19 @@ export default function ProjectsPage() {
                           <td className="p-3 font-medium">{eq.product_name}</td>
                           <td className="p-3 font-mono font-bold">{eq.serial_number || '—'}</td>
                           <td className="p-3">
-                            {Number(eq.quantity)} {eq.unit}
+                            {fmtQty(eq.quantity)} {eq.unit}
                           </td>
                           <td className="p-3 text-emerald-600">
-                            {Number(eq.returned_quantity)} {eq.unit}
+                            {fmtQty(eq.returned_quantity)} {eq.unit}
                           </td>
                           <td className="p-3 font-bold text-indigo-600">
-                            {Number(eq.remaining_in_project)} {eq.unit}
+                            {fmtQty(eq.remaining_in_project)} {eq.unit}
                           </td>
                           <td className="p-3">
-                            {Number(eq.purchase_cost_total).toLocaleString('tr-TR')} {eq.purchase_currency}
+                            {fmtMoney(eq.purchase_cost_total)} {eq.purchase_currency}
                           </td>
                           <td className="p-3 text-emerald-600">
-                            {Number(eq.market_value_total).toLocaleString('tr-TR')} {eq.market_value_currency}
+                            {fmtMoney(eq.market_value_total)} {eq.market_value_currency}
                           </td>
                           <td className="p-3">
                             {eq.status === 'in_project' ? (

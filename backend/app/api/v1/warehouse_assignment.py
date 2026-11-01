@@ -49,10 +49,19 @@ router = APIRouter(tags=["warehouse & assignment"])
 
 
 def _next_no(db: Session, model, col, prefix: str) -> str:
+    from app.models.core import Setting
+
+    row = db.scalar(select(Setting).where(Setting.key == "general"))
+    digits = 2
+    if row and isinstance(row.value, dict):
+        try:
+            digits = max(1, min(6, int(row.value.get("code_padding_digits", 2))))
+        except (TypeError, ValueError):
+            digits = 2
     cnt = db.scalar(select(func.count(model.id))) or 0
     seq = cnt + 1
     while True:
-        code = f"{prefix}-{seq:05d}"
+        code = f"{prefix}-{seq:0{digits}d}"
         if not db.scalar(select(model.id).where(col == code)):
             return code
         seq += 1

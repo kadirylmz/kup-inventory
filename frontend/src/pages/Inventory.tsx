@@ -24,6 +24,7 @@ import {
 import { toast } from 'sonner'
 import { api } from '@/lib/api'
 import { useAuth } from '@/lib/auth'
+import { cleanNumInput, fmtMoney, fmtQty } from '@/lib/format'
 import type { CategoryItem } from '@/pages/Categories'
 import type { BrandItem, ModelItem, SupplierItem } from '@/pages/BrandsModels'
 
@@ -339,17 +340,17 @@ export default function InventoryPage() {
     setFTracking(p.tracking_type)
     setFUnit(p.unit || 'Adet')
     setFBarcode(p.barcode || '')
-    setFQty(String(p.quantity ?? '0'))
-    setFMinStock(String(p.min_stock ?? '0'))
+    setFQty(cleanNumInput(p.quantity ?? '0'))
+    setFMinStock(cleanNumInput(p.min_stock ?? '0'))
     setFPurchaseDate(p.purchase_date || '')
-    setFPurchasePrice(p.purchase_price ? String(p.purchase_price) : '')
+    setFPurchasePrice(cleanNumInput(p.purchase_price))
     setFPurchaseCurr(p.purchase_currency || 'TRY')
-    setFVat(String(p.vat_rate ?? '20'))
+    setFVat(cleanNumInput(p.vat_rate ?? '20'))
     setFSupplierId(p.supplier_id || '')
     setFInvoice(p.invoice_no || '')
     setFWarStart(p.warranty_start || '')
     setFWarEnd(p.warranty_end || '')
-    setFMarketVal(p.current_market_value ? String(p.current_market_value) : '')
+    setFMarketVal(cleanNumInput(p.current_market_value))
     setFMarketCurr(p.market_value_currency || 'TRY')
     setFStatus(p.status || 'in_warehouse')
     setFWarehouse(p.warehouse_name || 'Merkez Depo')
@@ -524,8 +525,8 @@ export default function InventoryPage() {
     setAWarehouse(a.warehouse_name || 'Merkez Depo')
     setAShelf(a.shelf_section || '')
     setAStatus(a.status)
-    setAPurchasePrice(a.purchase_price ? String(a.purchase_price) : '')
-    setAMarketVal(a.current_market_value ? String(a.current_market_value) : '')
+    setAPurchasePrice(cleanNumInput(a.purchase_price))
+    setAMarketVal(cleanNumInput(a.current_market_value))
     setAMarketCurr((a.market_value_currency as 'TRY' | 'EUR' | 'USD') || 'TRY')
     setANotes(a.notes || '')
   }
@@ -874,18 +875,18 @@ export default function InventoryPage() {
                             </span>
                           ) : (
                             <span className="font-semibold">
-                              {Number(p.quantity).toLocaleString('tr-TR')} {p.unit}
+                              {fmtQty(p.quantity)} {p.unit}
                             </span>
                           )}
                         </td>
                         <td className="p-3.5 font-medium">
                           {p.purchase_price
-                            ? `${Number(p.purchase_price).toLocaleString('tr-TR')} ${SYM[p.purchase_currency] || p.purchase_currency}`
+                            ? `${fmtMoney(p.purchase_price)} ${SYM[p.purchase_currency] || p.purchase_currency}`
                             : '—'}
                         </td>
                         <td className="p-3.5 font-medium text-emerald-600 dark:text-emerald-400">
                           {p.current_market_value
-                            ? `${Number(p.current_market_value).toLocaleString('tr-TR')} ${SYM[p.market_value_currency] || p.market_value_currency}`
+                            ? `${fmtMoney(p.current_market_value)} ${SYM[p.market_value_currency] || p.market_value_currency}`
                             : '—'}
                         </td>
                         <td className="p-3.5 text-xs">
@@ -1010,12 +1011,12 @@ export default function InventoryPage() {
                         </td>
                         <td className="p-3.5">
                           {a.purchase_price
-                            ? `${Number(a.purchase_price).toLocaleString('tr-TR')} ${SYM[a.purchase_currency] || a.purchase_currency}`
+                            ? `${fmtMoney(a.purchase_price)} ${SYM[a.purchase_currency] || a.purchase_currency}`
                             : '—'}
                         </td>
                         <td className="p-3.5 text-emerald-600 dark:text-emerald-400">
                           {a.current_market_value
-                            ? `${Number(a.current_market_value).toLocaleString('tr-TR')} ${SYM[a.market_value_currency] || a.market_value_currency}`
+                            ? `${fmtMoney(a.current_market_value)} ${SYM[a.market_value_currency] || a.market_value_currency}`
                             : '—'}
                         </td>
                         <td className="p-3.5">
@@ -1665,10 +1666,10 @@ export default function InventoryPage() {
 
               {!shiftModal.asset && shiftModal.product?.tracking_type === 'quantity' && (
                 <label className="block text-sm font-medium">
-                  Gönderilecek Miktar ({shiftModal.product.unit}) * (Mevcut: {shiftModal.product.quantity})
+                  Gönderilecek Miktar ({shiftModal.product.unit}) * (Mevcut: {fmtQty(shiftModal.product.quantity)})
                   <input
                     type="number"
-                    step="0.01"
+                    step="any"
                     min="0.01"
                     max={Number(shiftModal.product.quantity) || undefined}
                     required
@@ -1752,7 +1753,7 @@ export default function InventoryPage() {
                   <div className="text-xs text-slate-500">Birim Alış Maliyeti</div>
                   <div className="font-bold">
                     {selectedProduct.purchase_price
-                      ? `${Number(selectedProduct.purchase_price).toLocaleString('tr-TR')} ${selectedProduct.purchase_currency}`
+                      ? `${fmtMoney(selectedProduct.purchase_price)} ${selectedProduct.purchase_currency}`
                       : '—'}
                   </div>
                 </div>
@@ -1760,7 +1761,7 @@ export default function InventoryPage() {
                   <div className="text-xs text-slate-500">Güncel Piyasa Değeri</div>
                   <div className="font-bold text-emerald-600">
                     {selectedProduct.current_market_value
-                      ? `${Number(selectedProduct.current_market_value).toLocaleString('tr-TR')} ${selectedProduct.market_value_currency}`
+                      ? `${fmtMoney(selectedProduct.current_market_value)} ${selectedProduct.market_value_currency}`
                       : '—'}
                   </div>
                 </div>

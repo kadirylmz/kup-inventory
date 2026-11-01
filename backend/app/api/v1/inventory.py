@@ -1402,9 +1402,42 @@ def inventory_summary(
     for a in assets:
         if a.status in status_counts:
             status_counts[a.status] += 1
-    for p in products:
-        if p.tracking_type == "quantity" and p.status in status_counts:
-            status_counts[p.status] += 1
+
+    from app.models.warehouse_assignment import Assignment, AssignmentItem, StockBalance
+    from app.models.project_license_maintenance import ProjectAsset
+
+    # Adet bazlı ürünlerin fiziksel konumlarına göre dağılımı:
+    # 1. Depolardaki stok bakiyeleri (StockBalance toplamı)
+    wh_units = db.scalar(
+        select(func.coalesce(func.sum(StockBalance.quantity), 0)).where(
+            StockBalance.tenant_id == me.tenant_id
+        )
+    ) or Decimal("0")
+
+    # 2. Aktif personel zimmetindeki adetler
+    asg_units = db.scalar(
+        select(func.coalesce(func.sum(AssignmentItem.quantity - AssignmentItem.returned_quantity), 0))
+        .join(Assignment, Assignment.id == AssignmentItem.assignment_id)
+        .where(
+            Assignment.tenant_id == me.tenant_id,
+            Assignment.is_deleted.is_(False),
+            AssignmentItem.is_returned.is_(False),
+            AssignmentItem.asset_id.is_(None),  # Seri numaralı cihazlar zaten assets listesinden sayıldı
+        )
+    ) or Decimal("0")
+
+    # 3. Aktif projelerdeki adetler
+    proj_units = db.scalar(
+        select(func.coalesce(func.sum(ProjectAsset.quantity - ProjectAsset.returned_quantity), 0)).where(
+            ProjectAsset.tenant_id == me.tenant_id,
+            ProjectAsset.status == "in_project",
+            ProjectAsset.asset_id.is_(None),
+        )
+    ) or Decimal("0")
+
+    status_counts["in_warehouse"] += int(wh_units)
+    status_counts["assigned"] += int(asg_units)
+    status_counts["in_project"] += int(proj_units)
 
     cat_distribution: dict[str, int] = {}
     for p in products:

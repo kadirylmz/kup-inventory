@@ -552,6 +552,9 @@ def _to_product_out(
     p: Product,
     asset_counts: dict[uuid.UUID, int],
     project_summaries: dict[uuid.UUID, str] | None = None,
+    assigned_summaries: dict[uuid.UUID, str] | None = None,
+    assigned_quantities: dict[uuid.UUID, Decimal] | None = None,
+    warehouse_quantities: dict[uuid.UUID, Decimal] | None = None,
 ) -> ProductOut:
     po = ProductOut.model_validate(p)
     po.category_name = p.category.name if p.category else ""
@@ -564,6 +567,14 @@ def _to_product_out(
     po.attributes = [AttributeItem(key=a.key, value=a.value) for a in p.attributes]
     if project_summaries:
         po.active_projects_summary = project_summaries.get(p.id)
+    if assigned_summaries:
+        po.assigned_summary = assigned_summaries.get(p.id)
+    if assigned_quantities:
+        po.assigned_quantity = assigned_quantities.get(p.id, Decimal("0"))
+    if warehouse_quantities and p.id in warehouse_quantities:
+        po.warehouse_quantity = warehouse_quantities[p.id]
+    else:
+        po.warehouse_quantity = p.quantity or Decimal("0")
     return po
 
 
@@ -608,6 +619,7 @@ def list_products(
     )
 
     from app.models.project_license_maintenance import ProjectAsset
+    from app.models.warehouse_assignment import AssignmentItem, Assignment, StockBalance
 
     proj_assets = db.scalars(
         select(ProjectAsset).where(
@@ -623,7 +635,48 @@ def list_products(
             proj_map.setdefault(pa.product_id, []).append(label)
     proj_summaries = {k: ", ".join(v) for k, v in proj_map.items()}
 
-    return [_to_product_out(p, asset_counts, proj_summaries) for p in products]
+    # Aktif zimmet kayıtları ve adetleri
+    asg_items = db.scalars(
+        select(AssignmentItem)
+        .join(Assignment, Assignment.id == AssignmentItem.assignment_id)
+        .where(
+            Assignment.tenant_id == me.tenant_id,
+            Assignment.is_deleted.is_(False),
+            AssignmentItem.is_returned.is_(False),
+        )
+    ).all()
+    asg_map: dict[uuid.UUID, list[str]] = {}
+    asg_quantities: dict[uuid.UUID, Decimal] = {}
+    for ai in asg_items:
+        rem = ai.quantity - ai.returned_quantity
+        if rem > 0 and ai.assignment and ai.assignment.employee:
+            prod_unit = ai.product.unit if ai.product else "Adet"
+            emp_name = ai.assignment.employee.full_name
+            label = f"{emp_name} ({int(rem) if rem == int(rem) else rem} {prod_unit})"
+            asg_map.setdefault(ai.product_id, []).append(label)
+            asg_quantities[ai.product_id] = asg_quantities.get(ai.product_id, Decimal("0")) + rem
+    asg_summaries = {k: ", ".join(v) for k, v in asg_map.items()}
+
+    # Depo bakiyeleri (StockBalance toplamı)
+    wh_balances = dict(
+        db.execute(
+            select(StockBalance.product_id, func.coalesce(func.sum(StockBalance.quantity), 0))
+            .where(StockBalance.tenant_id == me.tenant_id)
+            .group_by(StockBalance.product_id)
+        ).all()
+    )
+
+    return [
+        _to_product_out(
+            p,
+            asset_counts,
+            proj_summaries,
+            asg_summaries,
+            asg_quantities,
+            wh_balances,
+        )
+        for p in products
+    ]
 
 
 @router.get("/products/{product_id}", response_model=ProductOut)
@@ -645,6 +698,8 @@ def get_product(
     )
 
     from app.models.project_license_maintenance import ProjectAsset
+    from app.models.warehouse_assignment import AssignmentItem, Assignment, StockBalance
+
     proj_assets = db.scalars(
         select(ProjectAsset).where(
             ProjectAsset.tenant_id == me.tenant_id,
@@ -658,7 +713,38 @@ def get_product(
             labels.append(f"{pa.project.name} ({int(rem) if rem == int(rem) else rem} {p.unit or 'Adet'})")
     proj_summary = {p.id: ", ".join(labels)} if labels else None
 
-    return _to_product_out(p, {p.id: cnt}, proj_summary)
+    asg_items = db.scalars(
+        select(AssignmentItem)
+        .join(Assignment, Assignment.id == AssignmentItem.assignment_id)
+        .where(
+            Assignment.tenant_id == me.tenant_id,
+            Assignment.is_deleted.is_(False),
+            AssignmentItem.product_id == p.id,
+            AssignmentItem.is_returned.is_(False),
+        )
+    ).all()
+    asg_labels: list[str] = []
+    total_asg_qty = Decimal("0")
+    for ai in asg_items:
+        rem = ai.quantity - ai.returned_quantity
+        if rem > 0 and ai.assignment and ai.assignment.employee:
+            asg_labels.append(f"{ai.assignment.employee.full_name} ({int(rem) if rem == int(rem) else rem} {p.unit or 'Adet'})")
+            total_asg_qty += rem
+    asg_summary = {p.id: ", ".join(asg_labels)} if asg_labels else None
+
+    wh_bal = db.scalar(
+        select(func.coalesce(func.sum(StockBalance.quantity), 0))
+        .where(StockBalance.tenant_id == me.tenant_id, StockBalance.product_id == p.id)
+    ) or Decimal("0")
+
+    return _to_product_out(
+        p,
+        {p.id: cnt},
+        proj_summary,
+        asg_summary,
+        {p.id: total_asg_qty},
+        {p.id: Decimal(str(wh_bal))},
+    )
 
 
 @router.post("/products", response_model=ProductOut, status_code=201)

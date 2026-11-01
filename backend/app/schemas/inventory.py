@@ -284,6 +284,9 @@ class ProductOut(BaseModel):
     internal_notes: str | None
     primary_image_url: str | None = None
     active_projects_summary: str | None = None
+    assigned_summary: str | None = None
+    assigned_quantity: Decimal = Decimal("0")
+    warehouse_quantity: Decimal = Decimal("0")
     is_active: bool
     created_at: datetime
 

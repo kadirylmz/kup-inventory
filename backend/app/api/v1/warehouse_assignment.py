@@ -1206,8 +1206,29 @@ def create_assignment(
         else:
             qty = it.quantity
             prev_loc = prod.warehouse_name or "Depo"
-            if prod.tracking_type == "quantity" and body.from_warehouse_id:
-                _adjust_balance(db, me.tenant_id, prod, body.from_warehouse_id, None, -qty)
+            from_wh_id = body.from_warehouse_id
+            if not from_wh_id:
+                sb = db.scalar(
+                    select(StockBalance).where(
+                        StockBalance.tenant_id == me.tenant_id,
+                        StockBalance.product_id == prod.id,
+                        StockBalance.quantity > 0,
+                    ).order_by(StockBalance.quantity.desc())
+                )
+                if sb:
+                    from_wh_id = sb.warehouse_id
+
+            if from_wh_id:
+                _adjust_balance(db, me.tenant_id, prod, from_wh_id, None, -qty)
+            else:
+                if (prod.quantity or Decimal("0")) < qty:
+                    raise HTTPException(
+                        422,
+                        f"'{prod.name}' için yeterli stok yok (Mevcut: {prod.quantity or 0}, İstenen: {qty}).",
+                    )
+                prod.quantity = (prod.quantity or Decimal("0")) - qty
+            if (prod.quantity or Decimal("0")) <= Decimal("0"):
+                prod.status = "assigned"
 
         a_items.append(AssignmentItem(product_id=prod.id, asset_id=asset.id if asset else None, quantity=qty))
         m_items.append(
@@ -1293,13 +1314,32 @@ def return_assignment_item(
         item.is_returned = True
         item.returned_at = now
 
+    if not to_wh:
+        to_wh = db.scalar(
+            select(Warehouse).where(
+                Warehouse.tenant_id == me.tenant_id,
+                Warehouse.is_deleted.is_(False),
+                Warehouse.code == "WH-CENTRAL",
+            )
+        ) or db.scalar(
+            select(Warehouse).where(
+                Warehouse.tenant_id == me.tenant_id,
+                Warehouse.is_deleted.is_(False),
+            ).order_by(Warehouse.created_at.asc())
+        )
+
     if item.asset:
         item.asset.status = "in_warehouse"
         item.asset.assigned_employee_name = None
         if to_wh:
             item.asset.warehouse_name = to_wh.name
-    elif item.product and item.product.tracking_type == "quantity" and to_wh:
-        _adjust_balance(db, me.tenant_id, item.product, to_wh.id, None, body.returned_quantity)
+    elif item.product:
+        if to_wh:
+            _adjust_balance(db, me.tenant_id, item.product, to_wh.id, None, body.returned_quantity)
+        else:
+            item.product.quantity = (item.product.quantity or Decimal("0")) + body.returned_quantity
+        if (item.product.quantity or Decimal("0")) > 0 and item.product.status == "assigned":
+            item.product.status = "in_warehouse"
 
     db.add(
         AssignmentReturn(

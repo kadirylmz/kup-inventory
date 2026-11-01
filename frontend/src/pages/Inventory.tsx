@@ -68,6 +68,9 @@ export interface ProductItem {
   internal_notes: string | null
   primary_image_url: string | null
   active_projects_summary?: string | null
+  assigned_summary?: string | null
+  assigned_quantity?: string
+  warehouse_quantity?: string
   is_active: boolean
 }
 
@@ -893,20 +896,50 @@ export default function InventoryPage() {
                               <span className="inline-flex items-center gap-1 rounded-md bg-indigo-50 px-2 py-0.5 text-xs font-semibold text-indigo-700 dark:bg-indigo-500/15 dark:text-indigo-300">
                                 <Layers className="h-3 w-3" /> {p.serial_asset_count} Seri Cihaz
                               </span>
+                              <div className="flex flex-wrap gap-1 text-[11px]">
+                                <span className="rounded bg-emerald-50 px-1.5 py-0.5 font-medium text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300">
+                                  {fmtQty(p.warehouse_quantity ?? p.quantity)} Depoda
+                                </span>
+                                {Number(p.assigned_quantity || 0) > 0 && (
+                                  <span className="rounded bg-purple-50 px-1.5 py-0.5 font-medium text-purple-700 dark:bg-purple-500/15 dark:text-purple-300">
+                                    {fmtQty(p.assigned_quantity!)} Zimmette
+                                  </span>
+                                )}
+                              </div>
+                              {p.assigned_summary && (
+                                <div className="text-[11px] font-medium text-purple-600 dark:text-purple-400">
+                                  ↳ Zimmet: {p.assigned_summary}
+                                </div>
+                              )}
                               {p.active_projects_summary && (
                                 <div className="text-[11px] font-medium text-indigo-600 dark:text-indigo-400">
-                                  ↳ {p.active_projects_summary}
+                                  ↳ Proje: {p.active_projects_summary}
                                 </div>
                               )}
                             </div>
                           ) : (
                             <div className="space-y-1">
-                              <span className="font-semibold">
+                              <div className="font-semibold">
                                 {fmtQty(p.quantity)} {p.unit}
-                              </span>
+                              </div>
+                              <div className="flex flex-wrap gap-1 text-[11px]">
+                                <span className="rounded bg-emerald-50 px-1.5 py-0.5 font-medium text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300">
+                                  {fmtQty(p.warehouse_quantity ?? p.quantity)} Depoda
+                                </span>
+                                {Number(p.assigned_quantity || 0) > 0 && (
+                                  <span className="rounded bg-purple-50 px-1.5 py-0.5 font-medium text-purple-700 dark:bg-purple-500/15 dark:text-purple-300">
+                                    {fmtQty(p.assigned_quantity!)} Zimmette
+                                  </span>
+                                )}
+                              </div>
+                              {p.assigned_summary && (
+                                <div className="text-[11px] font-medium text-purple-600 dark:text-purple-400">
+                                  ↳ Zimmet: {p.assigned_summary}
+                                </div>
+                              )}
                               {p.active_projects_summary && (
                                 <div className="text-[11px] font-medium text-indigo-600 dark:text-indigo-400">
-                                  ↳ {p.active_projects_summary}
+                                  ↳ Proje: {p.active_projects_summary}
                                 </div>
                               )}
                             </div>
@@ -935,6 +968,11 @@ export default function InventoryPage() {
                           <div className="text-slate-600 dark:text-slate-300">
                             {[p.warehouse_name, p.shelf_section].filter(Boolean).join(' / ') || '—'}
                           </div>
+                          {p.assigned_summary && (
+                            <div className="mt-1 inline-flex items-center gap-1 rounded-md bg-purple-50 px-2 py-0.5 text-[11px] font-semibold text-purple-700 dark:bg-purple-500/20 dark:text-purple-300">
+                              Zimmet: {p.assigned_summary}
+                            </div>
+                          )}
                           {p.active_projects_summary && (
                             <div className="mt-1 inline-flex items-center gap-1 rounded-md bg-indigo-50 px-2 py-0.5 text-[11px] font-semibold text-indigo-700 dark:bg-indigo-500/20 dark:text-indigo-300">
                               <Briefcase className="h-3 w-3" /> Projede: {p.active_projects_summary}
@@ -1859,16 +1897,31 @@ export default function InventoryPage() {
                   </div>
                 </div>
                 <div>
-                  <div className="text-xs text-slate-500">Depo / Raf</div>
+                  <div className="text-xs text-slate-500">Depo / Stok Dağılımı</div>
                   <div className="font-semibold">
-                    {[selectedProduct.warehouse_name, selectedProduct.shelf_section].filter(Boolean).join(' / ') || '—'}
+                    <span className="text-emerald-600">
+                      {fmtQty(selectedProduct.warehouse_quantity ?? selectedProduct.quantity)} Depoda
+                    </span>
+                    {Number(selectedProduct.assigned_quantity || 0) > 0 && (
+                      <span className="ml-1 text-purple-600">
+                        • {fmtQty(selectedProduct.assigned_quantity!)} Zimmette
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-xs text-slate-400">
+                    {[selectedProduct.warehouse_name, selectedProduct.shelf_section].filter(Boolean).join(' / ') || 'Merkez Depo'}
                   </div>
                 </div>
                 <div>
-                  <div className="text-xs text-slate-500">Aktif Projeler</div>
+                  <div className="text-xs text-slate-500">Aktif Projeler & Zimmet</div>
                   <div className="font-semibold text-indigo-600 dark:text-indigo-400">
-                    {selectedProduct.active_projects_summary || 'Depoda'}
+                    {selectedProduct.active_projects_summary || (selectedProduct.assigned_summary ? '—' : 'Depoda')}
                   </div>
+                  {selectedProduct.assigned_summary && (
+                    <div className="text-xs font-semibold text-purple-600 dark:text-purple-400">
+                      ↳ Zimmet: {selectedProduct.assigned_summary}
+                    </div>
+                  )}
                 </div>
               </div>
 

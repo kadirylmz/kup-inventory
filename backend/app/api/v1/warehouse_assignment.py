@@ -382,17 +382,8 @@ def _sync_product_quantity_from_balances(db: Session, tenant_id: uuid.UUID, prod
             )
             or Decimal("0")
         )
-        from app.models.project_license_maintenance import ProjectAsset
-        proj_qty = (
-            db.scalar(
-                select(func.coalesce(func.sum(ProjectAsset.quantity - ProjectAsset.returned_quantity), 0)).where(
-                    ProjectAsset.product_id == product.id,
-                    ProjectAsset.status == "in_project",
-                )
-            )
-            or Decimal("0")
-        )
-        product.quantity = Decimal(str(wh_qty + asg_qty + proj_qty))
+        # Projeye gidenler envanterden düşer, ofisteki zimmettekiler şirkette kalmaya devam ettiği için envantere dahildir
+        product.quantity = Decimal(str(wh_qty + asg_qty))
 
 
 @router.patch("/warehouses/stock/{balance_id}", response_model=StockBalanceOut)

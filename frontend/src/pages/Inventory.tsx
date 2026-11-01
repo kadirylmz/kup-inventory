@@ -595,13 +595,8 @@ export default function InventoryPage() {
     }
     try {
       const prodId = shiftModal.asset ? shiftModal.asset.product_id : shiftModal.product!.id
-      const isSerial = shiftModal.asset || shiftModal.product?.tracking_type === 'serial'
-      const chosenAssetId = shiftModal.asset ? shiftModal.asset.id : shiftAssetId
-
-      if (isSerial && !chosenAssetId) {
-        toast.error('Lütfen projeye gönderilecek seri numaralı cihazı seçin.')
-        return
-      }
+      const chosenAssetId = shiftModal.asset ? shiftModal.asset.id : (shiftAssetId || null)
+      const hasChosenAsset = !!chosenAssetId
 
       await api(`/projects/${shiftProjectId}/send`, {
         method: 'POST',
@@ -610,8 +605,8 @@ export default function InventoryPage() {
           items: [
             {
               product_id: prodId,
-              asset_id: isSerial ? chosenAssetId : null,
-              quantity: isSerial ? '1' : shiftQty || '1',
+              asset_id: chosenAssetId,
+              quantity: hasChosenAsset ? '1' : (shiftQty || '1'),
               note: shiftNote || null,
             },
           ],
@@ -1664,24 +1659,43 @@ export default function InventoryPage() {
               </label>
 
               {!shiftModal.asset && shiftModal.product?.tracking_type === 'serial' && (
-                <label className="block text-sm font-medium">
-                  Gönderilecek Seri Numaralı Cihaz *
-                  <select
-                    required
-                    value={shiftAssetId}
-                    onChange={e => setShiftAssetId(e.target.value)}
-                    className={inputCls + ' mt-1 font-mono'}
-                  >
-                    <option value="">— Cihaz Seri No Seçin —</option>
-                    {shiftProdAssets
-                      .filter(x => x.status !== 'in_project')
-                      .map(x => (
-                        <option key={x.id} value={x.id}>
-                          {x.serial_number} ({x.warehouse_name || 'Depo'})
-                        </option>
-                      ))}
-                  </select>
-                </label>
+                <>
+                  <label className="block text-sm font-medium">
+                    Seri Numaralı Cihaz (İsteğe Bağlı)
+                    <select
+                      value={shiftAssetId}
+                      onChange={e => {
+                        setShiftAssetId(e.target.value)
+                        if (e.target.value) setShiftQty('1')
+                      }}
+                      className={inputCls + ' mt-1 font-mono'}
+                    >
+                      <option value="">— Seri Numarası Olmadan / Genel Gönder —</option>
+                      {shiftProdAssets
+                        .filter(x => x.status !== 'in_project')
+                        .map(x => (
+                          <option key={x.id} value={x.id}>
+                            {x.serial_number} ({x.warehouse_name || 'Depo'})
+                          </option>
+                        ))}
+                    </select>
+                  </label>
+                  {!shiftAssetId && (
+                    <label className="block text-sm font-medium">
+                      Gönderilecek Miktar ({shiftModal.product.unit || 'Adet'}) * (Mevcut: {fmtQty(shiftModal.product.quantity)})
+                      <input
+                        type="number"
+                        step="any"
+                        min="0.01"
+                        max={Number(shiftModal.product.quantity) || undefined}
+                        required
+                        value={shiftQty}
+                        onChange={e => setShiftQty(e.target.value)}
+                        className={inputCls + ' mt-1'}
+                      />
+                    </label>
+                  )}
+                </>
               )}
 
               {!shiftModal.asset && shiftModal.product?.tracking_type === 'quantity' && (

@@ -23,7 +23,7 @@ from app.models.project_license_maintenance import (
     SoftwareLicense,
     SoftwareProduct,
 )
-from app.models.warehouse_assignment import StockMovement, StockMovementItem, Warehouse
+from app.models.warehouse_assignment import StockBalance, StockMovement, StockMovementItem, Warehouse
 from app.schemas.project_license_maintenance import (
     LicenseCreate,
     LicenseOut,
@@ -258,32 +258,40 @@ def send_equipment_to_project(
         else:
             qty = it.quantity
             prev_loc = prod.warehouse_name or "Depo"
-            if prod.tracking_type == "quantity":
-                from_wh_id = body.from_warehouse_id
-                if not from_wh_id:
-                    # Depo belirtilmediyse bakiyesi olan depodan otomatik düş
-                    from app.models.warehouse_assignment import StockBalance
-                    sb = db.scalar(
-                        select(StockBalance).where(
-                            StockBalance.tenant_id == me.tenant_id,
-                            StockBalance.product_id == prod.id,
-                            StockBalance.quantity > 0,
-                        ).order_by(StockBalance.quantity.desc())
-                    )
-                    if sb:
-                        from_wh_id = sb.warehouse_id
+            from_wh_id = body.from_warehouse_id
+            if not from_wh_id:
+                # Depo belirtilmediyse bakiyesi olan depodan otomatik düş
+                from app.models.warehouse_assignment import StockBalance
+                sb = db.scalar(
+                    select(StockBalance).where(
+                        StockBalance.tenant_id == me.tenant_id,
+                        StockBalance.product_id == prod.id,
+                        StockBalance.quantity > 0,
+                    ).order_by(StockBalance.quantity.desc())
+                )
+                if sb:
+                    from_wh_id = sb.warehouse_id
 
-                if from_wh_id:
-                    _adjust_balance(db, me.tenant_id, prod, from_wh_id, None, -qty)
-                else:
-                    if (prod.quantity or Decimal("0")) < qty:
-                        raise HTTPException(
-                            422,
-                            f"'{prod.name}' için yeterli stok yok (Mevcut: {prod.quantity or 0}, İstenen: {qty}).",
-                        )
-                    prod.quantity = (prod.quantity or Decimal("0")) - qty
-                if prod.quantity == Decimal("0"):
-                    prod.status = "in_project"
+            if from_wh_id:
+                _adjust_balance(db, me.tenant_id, prod, from_wh_id, None, -qty)
+            else:
+                if (prod.quantity or Decimal("0")) < qty:
+                    raise HTTPException(
+                        422,
+                        f"'{prod.name}' için yeterli stok yok (Mevcut: {prod.quantity or 0}, İstenen: {qty}).",
+                    )
+                prod.quantity = (prod.quantity or Decimal("0")) - qty
+            # Her zaman ürün toplam miktarını güncel depolardaki toplam stok ile senkronize et
+            total_stock = db.scalar(
+                select(func.coalesce(func.sum(StockBalance.quantity), 0)).where(
+                    StockBalance.tenant_id == me.tenant_id,
+                    StockBalance.product_id == prod.id,
+                )
+            )
+            if total_stock is not None and from_wh_id:
+                prod.quantity = Decimal(str(total_stock))
+            if (prod.quantity or Decimal("0")) <= Decimal("0"):
+                prod.status = "in_project"
 
         db.add(
             ProjectAsset(
@@ -383,11 +391,19 @@ def return_equipment_from_project(
         pa.asset.assigned_project_name = None
         if to_wh:
             pa.asset.warehouse_name = to_wh.name
-    elif pa.product and pa.product.tracking_type == "quantity":
+    elif pa.product:
         if to_wh:
             _adjust_balance(db, me.tenant_id, pa.product, to_wh.id, None, body.returned_quantity)
         else:
             pa.product.quantity = (pa.product.quantity or Decimal("0")) + body.returned_quantity
+        total_stock = db.scalar(
+            select(func.coalesce(func.sum(StockBalance.quantity), 0)).where(
+                StockBalance.tenant_id == me.tenant_id,
+                StockBalance.product_id == pa.product.id,
+            )
+        )
+        if total_stock is not None and to_wh:
+            pa.product.quantity = Decimal(str(total_stock))
         if pa.product.quantity > Decimal("0") and pa.product.status == "in_project":
             pa.product.status = "in_warehouse"
 

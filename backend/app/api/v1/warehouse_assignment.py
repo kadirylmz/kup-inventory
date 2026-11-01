@@ -130,19 +130,20 @@ def _adjust_balance(
             f"Stok negatif değere düşemez! '{product.name}' mevcut bakiye: {bal.quantity}, istenen çıkış: {abs(delta)}",
         )
     bal.quantity = new_qty
+    db.flush()
 
-    # Adet bazlı ürün ise toplam katalog miktarını da senkronize et
-    if product.tracking_type == "quantity":
-        total = (
-            db.scalar(
-                select(func.coalesce(func.sum(StockBalance.quantity), 0)).where(
-                    StockBalance.tenant_id == tenant_id,
-                    StockBalance.product_id == product.id,
-                )
+    # Katalog toplam miktarını da senkronize et
+    total = (
+        db.scalar(
+            select(func.coalesce(func.sum(StockBalance.quantity), 0)).where(
+                StockBalance.tenant_id == tenant_id,
+                StockBalance.product_id == product.id,
             )
-            or Decimal("0")
         )
-        product.quantity = Decimal(str(total))
+        or Decimal("0")
+    )
+    product.quantity = Decimal(str(total))
+    db.flush()
     return bal
 
 

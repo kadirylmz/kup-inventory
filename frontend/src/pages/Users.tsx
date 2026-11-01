@@ -161,6 +161,56 @@ export default function UsersPage() {
     }
   }
 
+  // Türkçe İzin Açıklamaları
+  const PERM_LABELS: Record<string, string> = {
+    'dashboard.view': 'Genel Bakış (Dashboard)',
+    'product.view': 'Envanter Görüntüleme',
+    'product.create': 'Yeni Ürün/Cihaz Ekleme',
+    'product.update': 'Ürün/Cihaz Düzenleme',
+    'product.delete': 'Ürün/Cihaz Silme',
+    'product.deactivate': 'Ürün Pasife Alma',
+    'category.view': 'Kategori Görüntüleme',
+    'category.manage': 'Kategori Yönetimi',
+    'brand.view': 'Marka & Model Görüntüleme',
+    'brand.manage': 'Marka & Model Yönetimi',
+    'warehouse.view': 'Depoları Görüntüleme',
+    'warehouse.manage': 'Depo & Raf Yönetimi',
+    'movement.view': 'Stok Hareketleri Görüntüleme',
+    'movement.create': 'Stok Hareketi Oluşturma',
+    'movement.approve': 'Stok Hareketi Onaylama',
+    'project.view': 'Projeler Görüntüleme',
+    'project.manage': 'Proje Yönetimi & Ekipman Sevki',
+    'employee.view': 'Personel Listesi Görüntüleme',
+    'employee.manage': 'Personel Yönetimi',
+    'assignment.view': 'Zimmet Listesi Görüntüleme',
+    'assignment.manage': 'Zimmet Verme & İade Alma',
+    'license.view': 'Yazılım Lisansları Görüntüleme',
+    'license.manage': 'Lisans Yönetimi',
+    'license.view_key': 'Lisans Anahtarı Görme',
+    'maintenance.view': 'Bakım & Servis Görüntüleme',
+    'maintenance.manage': 'Bakım & Servis Yönetimi',
+    'stocktake.view': 'Sayım Listesi Görüntüleme',
+    'stocktake.perform': 'Sayım Yapma',
+    'stocktake.approve': 'Sayım Onaylama',
+    'valuation.view': 'Değerleme & Piyasa Fiyatları',
+    'valuation.update': 'Değerleme Güncelleme',
+    'valuation.approve': 'Değerleme Onaylama',
+    'report.view': 'Raporlar Ekranı',
+    'report.generate': 'Rapor Üretme & İndirme',
+    'notification.view': 'Bildirimleri Görüntüleme',
+    'audit.view': 'İşlem Geçmişi (Audit Logs)',
+    'user.view': 'Kullanıcıları Görüntüleme',
+    'user.manage': 'Kullanıcı Yönetimi',
+    'role.view': 'Rolleri Görüntüleme',
+    'role.manage': 'Rol & Yetki Yönetimi',
+    'setting.view': 'Ayarları Görüntüleme',
+    'setting.manage': 'Ayar Değiştirme',
+    'backup.view': 'Yedekleri Görüntüleme',
+    'backup.manage': 'Yedek Alma & Geri Yükleme',
+    'app_license.view': 'Sistem Lisansı Görüntüleme',
+    'app_license.manage': 'Sistem Lisansı Yönetimi',
+  }
+
   const inputCls =
     'w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand-500 dark:border-slate-700 dark:bg-slate-800'
 
@@ -460,14 +510,19 @@ export default function UsersPage() {
                 <X className="h-5 w-5 text-slate-400" />
               </button>
             </div>
-            <div className="grid max-h-96 grid-cols-2 gap-2 overflow-y-auto p-1 sm:grid-cols-3">
+            <div className="grid max-h-96 grid-cols-1 gap-2 overflow-y-auto p-1 sm:grid-cols-2">
               {allPermissions.map(code => (
                 <label
                   key={code}
-                  className="flex items-center gap-2 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs dark:border-slate-800"
+                  className={`flex items-start gap-2.5 rounded-lg border p-2 text-xs transition cursor-pointer ${
+                    rolePerms.includes(code)
+                      ? 'border-indigo-300 bg-indigo-50/50 dark:border-indigo-800 dark:bg-indigo-950/30'
+                      : 'border-slate-200 hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-800/50'
+                  }`}
                 >
                   <input
                     type="checkbox"
+                    className="mt-0.5 rounded text-brand-600 focus:ring-brand-500"
                     checked={rolePerms.includes(code)}
                     onChange={e =>
                       setRolePerms(
@@ -475,7 +530,12 @@ export default function UsersPage() {
                       )
                     }
                   />
-                  <span className="font-mono">{code}</span>
+                  <div>
+                    <div className="font-semibold text-slate-800 dark:text-slate-200">
+                      {PERM_LABELS[code] || code}
+                    </div>
+                    <div className="font-mono text-[10px] text-slate-400">{code}</div>
+                  </div>
                 </label>
               ))}
             </div>

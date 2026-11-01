@@ -46,5 +46,16 @@ SYSTEM_ROLES: dict[str, dict] = {
         "name": "Proje Yöneticisi",
         "perms": sorted(set(VIEW_CODES + ["project.manage", "movement.create"])),
     },
-    "VIEWER": {"name": "Görüntüleyici", "perms": sorted(set(VIEW_CODES + ["report.generate"]))},
+    "VIEWER": {
+        "name": "Görüntüleyici",
+        "perms": [
+            "dashboard.view",
+            "product.view",
+            "project.view",
+            "assignment.view",
+            "valuation.view",
+            "report.view",
+            "report.generate",
+        ],
+    },
 }

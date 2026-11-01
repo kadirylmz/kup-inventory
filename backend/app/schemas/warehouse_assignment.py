@@ -94,6 +94,11 @@ class StockBalanceOut(BaseModel):
     quantity: Decimal
 
 
+class StockBalanceUpdate(BaseModel):
+    quantity: Decimal = Field(ge=0)
+    location_id: uuid.UUID | None = None
+
+
 # --- STOCK MOVEMENTS ---
 class MovementCreate(BaseModel):
     movement_type: MovementType

@@ -862,14 +862,19 @@ def delete_product(
     db: Session = Depends(get_db),
     me: User = Depends(require_permission("product.delete")),
 ):
+    from app.models.warehouse_assignment import StockBalance
+
     p = db.get(Product, product_id)
     if not p or p.tenant_id != me.tenant_id or p.is_deleted:
         raise HTTPException(404, "Ürün bulunamadı.")
     p.is_deleted = True
     p.is_active = False
+    p.quantity = Decimal("0")
     for a in db.scalars(select(Asset).where(Asset.tenant_id == me.tenant_id, Asset.product_id == p.id)):
         a.is_deleted = True
         a.is_active = False
+    for sb in db.scalars(select(StockBalance).where(StockBalance.tenant_id == me.tenant_id, StockBalance.product_id == p.id)):
+        db.delete(sb)
     write_audit(
         db,
         tenant_id=me.tenant_id,

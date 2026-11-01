@@ -7,12 +7,14 @@ import {
   Plus,
   Repeat,
   RotateCcw,
+  Trash2,
   X,
   XCircle,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { api } from '@/lib/api'
 import { useAuth } from '@/lib/auth'
+import { fmtQty } from '@/lib/format'
 import type { WarehouseItem } from '@/pages/Warehouses'
 import type { AssetItem, ProductItem } from '@/pages/Inventory'
 
@@ -227,6 +229,35 @@ export default function MovementsPage() {
     }
   }
 
+  const handleDeleteMovement = async (m: MovementRecord) => {
+    if (
+      !window.confirm(
+        `${m.movement_no} numaralı stok hareketini silmek istediğinize emin misiniz? (Bu işlem hareketin etkilediği stok bakiyesini de geri alır.)`,
+      )
+    )
+      return
+    try {
+      await api(`/movements/${m.id}`, { method: 'DELETE' })
+      toast.success('Stok hareketi silindi.')
+      qc.invalidateQueries({ queryKey: ['movements'] })
+      qc.invalidateQueries({ queryKey: ['warehouse-stock'] })
+      qc.invalidateQueries({ queryKey: ['products'] })
+    } catch (err) {
+      toast.error((err as Error).message)
+    }
+  }
+
+  const handleDeleteTransfer = async (t: TransferRecord) => {
+    if (!window.confirm(`${t.transfer_no} numaralı transfer kaydını silmek istediğinize emin misiniz?`)) return
+    try {
+      await api(`/transfers/${t.id}`, { method: 'DELETE' })
+      toast.success('Transfer kaydı silindi.')
+      qc.invalidateQueries({ queryKey: ['transfers'] })
+    } catch (err) {
+      toast.error((err as Error).message)
+    }
+  }
+
   const inputCls =
     'w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand-500 dark:border-slate-700 dark:bg-slate-800'
 
@@ -370,7 +401,7 @@ export default function MovementsPage() {
                             )}
                           </td>
                           <td className="p-3.5 font-bold">
-                            {first ? Number(first.quantity).toLocaleString('tr-TR') : '—'}
+                            {first ? fmtQty(first.quantity) : '—'}
                           </td>
                           <td className="p-3.5 text-xs">
                             {(first?.previous_location_text || m.from_warehouse_name || '—') +
@@ -380,15 +411,26 @@ export default function MovementsPage() {
                           <td className="p-3.5 text-xs">{m.performed_by_name}</td>
                           <td className="p-3.5 text-xs text-slate-500">{m.note || '—'}</td>
                           <td className="p-3.5 text-right">
-                            {can('movement.approve') && !m.is_reversed && m.movement_type !== 'reversal' && (
-                              <button
-                                onClick={() => handleReverse(m)}
-                                className="inline-flex items-center gap-1 rounded border border-rose-200 px-2 py-1 text-xs font-medium text-rose-600 hover:bg-rose-50 dark:border-rose-900 dark:hover:bg-rose-950/40"
-                                title="Ters İşlem Oluştur"
-                              >
-                                <RotateCcw className="h-3 w-3" /> Ters İşlem
-                              </button>
-                            )}
+                            <div className="inline-flex items-center gap-1.5">
+                              {can('movement.approve') && !m.is_reversed && m.movement_type !== 'reversal' && (
+                                <button
+                                  onClick={() => handleReverse(m)}
+                                  className="inline-flex items-center gap-1 rounded border border-amber-200 px-2 py-1 text-xs font-medium text-amber-700 hover:bg-amber-50 dark:border-amber-900 dark:text-amber-300 dark:hover:bg-amber-950/40"
+                                  title="Ters İşlem Oluştur"
+                                >
+                                  <RotateCcw className="h-3 w-3" /> Ters İşlem
+                                </button>
+                              )}
+                              {can('movement.approve') && (
+                                <button
+                                  onClick={() => handleDeleteMovement(m)}
+                                  className="inline-flex items-center gap-1 rounded border border-rose-200 px-2 py-1 text-xs font-medium text-rose-600 hover:bg-rose-50 dark:border-rose-900/50 dark:text-rose-400 dark:hover:bg-rose-950/40"
+                                  title="Hareketi Sil"
+                                >
+                                  <Trash2 className="h-3 w-3" /> Sil
+                                </button>
+                              )}
+                            </div>
                           </td>
                         </tr>
                       )
@@ -435,7 +477,7 @@ export default function MovementsPage() {
                         <div className="font-mono text-xs text-slate-500">SN: {t.serial_number}</div>
                       )}
                     </td>
-                    <td className="p-3.5 font-bold">{Number(t.quantity).toLocaleString('tr-TR')}</td>
+                    <td className="p-3.5 font-bold">{fmtQty(t.quantity)}</td>
                     <td className="p-3.5 text-xs font-medium">
                       {t.from_warehouse_name} → {t.to_warehouse_name}
                     </td>
@@ -458,22 +500,33 @@ export default function MovementsPage() {
                       )}
                     </td>
                     <td className="p-3.5 text-right">
-                      {t.status === 'pending' && can('movement.approve') && (
-                        <div className="inline-flex gap-2">
+                      <div className="inline-flex items-center gap-2">
+                        {t.status === 'pending' && can('movement.approve') && (
+                          <>
+                            <button
+                              onClick={() => handleApproveTransfer(t.id)}
+                              className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-emerald-700"
+                            >
+                              <CheckCircle2 className="h-3.5 w-3.5" /> Onayla
+                            </button>
+                            <button
+                              onClick={() => handleRejectTransfer(t.id)}
+                              className="inline-flex items-center gap-1 rounded-lg bg-rose-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-rose-700"
+                            >
+                              <XCircle className="h-3.5 w-3.5" /> Reddet
+                            </button>
+                          </>
+                        )}
+                        {can('movement.approve') && (
                           <button
-                            onClick={() => handleApproveTransfer(t.id)}
-                            className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-emerald-700"
+                            onClick={() => handleDeleteTransfer(t)}
+                            className="inline-flex items-center gap-1 rounded border border-rose-200 px-2 py-1 text-xs font-medium text-rose-600 hover:bg-rose-50 dark:border-rose-900/50 dark:text-rose-400 dark:hover:bg-rose-950/40"
+                            title="Transfer Kaydını Sil"
                           >
-                            <CheckCircle2 className="h-3.5 w-3.5" /> Onayla
+                            <Trash2 className="h-3.5 w-3.5" /> Sil
                           </button>
-                          <button
-                            onClick={() => handleRejectTransfer(t.id)}
-                            className="inline-flex items-center gap-1 rounded-lg bg-rose-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-rose-700"
-                          >
-                            <XCircle className="h-3.5 w-3.5" /> Reddet
-                          </button>
-                        </div>
-                      )}
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}

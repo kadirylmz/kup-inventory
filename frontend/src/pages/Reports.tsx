@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { FileText, Printer, QrCode, Scale } from 'lucide-react'
 import { api } from '@/lib/api'
+import { fmtMoney, fmtQty } from '@/lib/format'
 
 interface ReportType {
   id: string
@@ -49,9 +50,6 @@ export default function ReportsPage() {
     queryFn: () => api<AssetRow[]>('/assets'),
     enabled: mode === 'qr_labels',
   })
-
-  const fmt = (n: number) =>
-    new Intl.NumberFormat('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n || 0)
 
   return (
     <div className="space-y-5">
@@ -151,8 +149,14 @@ export default function ReportsPage() {
                   </div>
                   <div>
                     Raporlama Para Birimi: <span className="font-semibold">{currency}</span> (EUR:{' '}
-                    {reportData?.exchange_rate_snapshot?.EUR || '—'} ₺ | USD:{' '}
-                    {reportData?.exchange_rate_snapshot?.USD || '—'} ₺)
+                    {reportData?.exchange_rate_snapshot?.EUR != null
+                      ? fmtMoney(reportData.exchange_rate_snapshot.EUR)
+                      : '—'}{' '}
+                    ₺ | USD:{' '}
+                    {reportData?.exchange_rate_snapshot?.USD != null
+                      ? fmtMoney(reportData.exchange_rate_snapshot.USD)
+                      : '—'}{' '}
+                    ₺)
                   </div>
                 </div>
               </div>
@@ -204,12 +208,12 @@ export default function ReportsPage() {
                 <div className="flex gap-6 text-right">
                   <div>
                     <div className="text-slate-500">Toplam Kayıt / Miktar</div>
-                    <div className="text-base font-bold">{reportData?.total_quantity ?? 0}</div>
+                    <div className="text-base font-bold">{fmtQty(reportData?.total_quantity ?? 0)}</div>
                   </div>
                   <div>
                     <div className="text-slate-500">Toplam Finansal Değer ({currency})</div>
                     <div className="text-base font-extrabold text-brand-600">
-                      {fmt(reportData?.total_value ?? 0)} {currency}
+                      {fmtMoney(reportData?.total_value ?? 0)} {currency}
                     </div>
                   </div>
                 </div>

@@ -38,6 +38,7 @@ from app.schemas.warehouse_assignment import (
     MovementOut,
     MovementReverseIn,
     StockBalanceOut,
+    StockBalanceUpdate,
     TransferCreate,
     TransferOut,
     WarehouseCreate,
@@ -294,7 +295,158 @@ def list_warehouse_stock(
             quantity=r.quantity,
         )
         for r in rows
+        if not r.product or not r.product.is_deleted
     ]
+
+
+def _sync_product_quantity_from_balances(db: Session, tenant_id: uuid.UUID, product: Product | None) -> None:
+    if product and product.tracking_type == "quantity":
+        total = (
+            db.scalar(
+                select(func.coalesce(func.sum(StockBalance.quantity), 0)).where(
+                    StockBalance.tenant_id == tenant_id,
+                    StockBalance.product_id == product.id,
+                )
+            )
+            or Decimal("0")
+        )
+        product.quantity = Decimal(str(total))
+
+
+@router.patch("/warehouses/stock/{balance_id}", response_model=StockBalanceOut)
+def update_warehouse_stock(
+    balance_id: uuid.UUID,
+    body: StockBalanceUpdate,
+    request: Request,
+    db: Session = Depends(get_db),
+    me: User = Depends(require_permission("warehouse.manage")),
+):
+    bal = db.get(StockBalance, balance_id)
+    if not bal or bal.tenant_id != me.tenant_id:
+        raise HTTPException(404, "Stok bakiye kaydı bulunamadı.")
+    old_qty = bal.quantity
+    bal.quantity = body.quantity
+    if "location_id" in body.model_dump(exclude_unset=True):
+        bal.location_id = body.location_id
+    db.flush()
+    _sync_product_quantity_from_balances(db, me.tenant_id, bal.product)
+    write_audit(
+        db,
+        tenant_id=me.tenant_id,
+        user_id=me.id,
+        action="warehouse.stock_update",
+        entity="stock_balance",
+        entity_id=bal.id,
+        old={"quantity": str(old_qty)},
+        new={"quantity": str(bal.quantity)},
+        ip=client_ip(request),
+    )
+    db.commit()
+    db.refresh(bal)
+    return StockBalanceOut(
+        id=bal.id,
+        product_id=bal.product_id,
+        product_name=bal.product.name if bal.product else "",
+        inventory_code=bal.product.inventory_code if bal.product else "",
+        unit=bal.product.unit if bal.product else "Adet",
+        warehouse_id=bal.warehouse_id,
+        warehouse_name=bal.warehouse.name if bal.warehouse else "",
+        location_id=bal.location_id,
+        location_name=bal.location.name if bal.location else None,
+        quantity=bal.quantity,
+    )
+
+
+@router.delete("/warehouses/stock/{balance_id}")
+def delete_warehouse_stock(
+    balance_id: uuid.UUID,
+    request: Request,
+    db: Session = Depends(get_db),
+    me: User = Depends(require_permission("warehouse.manage")),
+):
+    bal = db.get(StockBalance, balance_id)
+    if not bal or bal.tenant_id != me.tenant_id:
+        raise HTTPException(404, "Stok bakiye kaydı bulunamadı.")
+    prod = bal.product
+    old_info = {
+        "product": prod.name if prod else str(bal.product_id),
+        "warehouse": bal.warehouse.name if bal.warehouse else str(bal.warehouse_id),
+        "quantity": str(bal.quantity),
+    }
+    db.delete(bal)
+    db.flush()
+    _sync_product_quantity_from_balances(db, me.tenant_id, prod)
+    write_audit(
+        db,
+        tenant_id=me.tenant_id,
+        user_id=me.id,
+        action="warehouse.stock_delete",
+        entity="stock_balance",
+        entity_id=balance_id,
+        old=old_info,
+        ip=client_ip(request),
+    )
+    db.commit()
+    return {"ok": True}
+
+
+@router.delete("/warehouses/{warehouse_id}/locations/{location_id}")
+def delete_warehouse_location(
+    warehouse_id: uuid.UUID,
+    location_id: uuid.UUID,
+    request: Request,
+    db: Session = Depends(get_db),
+    me: User = Depends(require_permission("warehouse.manage")),
+):
+    loc = db.get(WarehouseLocation, location_id)
+    if not loc or loc.tenant_id != me.tenant_id or loc.warehouse_id != warehouse_id:
+        raise HTTPException(404, "Raf/bölüm bulunamadı.")
+    for sb in db.scalars(select(StockBalance).where(StockBalance.location_id == location_id)):
+        sb.location_id = None
+    db.delete(loc)
+    write_audit(
+        db,
+        tenant_id=me.tenant_id,
+        user_id=me.id,
+        action="warehouse.location_delete",
+        entity="warehouse_location",
+        entity_id=location_id,
+        old={"code": loc.code, "name": loc.name},
+        ip=client_ip(request),
+    )
+    db.commit()
+    return {"ok": True}
+
+
+@router.delete("/warehouses/{warehouse_id}")
+def delete_warehouse(
+    warehouse_id: uuid.UUID,
+    request: Request,
+    db: Session = Depends(get_db),
+    me: User = Depends(require_permission("warehouse.manage")),
+):
+    wh = db.get(Warehouse, warehouse_id)
+    if not wh or wh.tenant_id != me.tenant_id or wh.is_deleted:
+        raise HTTPException(404, "Depo bulunamadı.")
+    wh.is_deleted = True
+    wh.is_active = False
+    for sb in db.scalars(select(StockBalance).where(StockBalance.warehouse_id == warehouse_id)):
+        prod = sb.product
+        db.delete(sb)
+        db.flush()
+        _sync_product_quantity_from_balances(db, me.tenant_id, prod)
+    write_audit(
+        db,
+        tenant_id=me.tenant_id,
+        user_id=me.id,
+        action="warehouse.delete",
+        entity="warehouse",
+        entity_id=wh.id,
+        old={"code": wh.code, "name": wh.name},
+        ip=client_ip(request),
+    )
+    db.commit()
+    return {"ok": True}
 
 
 # ==========================================
@@ -540,6 +692,52 @@ def reverse_movement(
     return _to_movement_out(rev)
 
 
+@router.delete("/movements/{movement_id}")
+def delete_movement(
+    movement_id: uuid.UUID,
+    request: Request,
+    db: Session = Depends(get_db),
+    me: User = Depends(require_permission("movement.approve")),
+):
+    """Stok hareketini siler ve varsa etkilediği depo bakiyesini geri alır."""
+    mov = db.get(StockMovement, movement_id)
+    if not mov or mov.tenant_id != me.tenant_id:
+        raise HTTPException(404, "Stok hareketi bulunamadı.")
+
+    if not mov.is_reversed and mov.movement_type != "reversal":
+        for item in mov.items:
+            prod = item.product
+            if prod and prod.tracking_type == "quantity":
+                try:
+                    if mov.movement_type in INBOUND_TYPES and mov.to_warehouse_id:
+                        _adjust_balance(db, me.tenant_id, prod, mov.to_warehouse_id, mov.to_location_id, -item.quantity)
+                    elif mov.movement_type in OUTBOUND_TYPES and mov.from_warehouse_id:
+                        _adjust_balance(db, me.tenant_id, prod, mov.from_warehouse_id, mov.from_location_id, item.quantity)
+                except HTTPException:
+                    pass
+
+    # Bu harekete bağlı transfer veya ters işlem referanslarını temizle
+    for trf in db.scalars(select(Transfer).where(Transfer.movement_id == mov.id)):
+        trf.movement_id = None
+    for rev in db.scalars(select(StockMovement).where(StockMovement.reverses_id == mov.id)):
+        rev.reverses_id = None
+
+    mov_no = mov.movement_no
+    db.delete(mov)
+    write_audit(
+        db,
+        tenant_id=me.tenant_id,
+        user_id=me.id,
+        action="movement.delete",
+        entity="stock_movement",
+        entity_id=movement_id,
+        old={"movement_no": mov_no},
+        ip=client_ip(request),
+    )
+    db.commit()
+    return {"ok": True}
+
+
 # ==========================================
 # 3. TRANSFERS (ONAYLI DEPOLAR ARASI TRANSFER)
 # ==========================================
@@ -728,6 +926,31 @@ def reject_transfer(
     db.commit()
     db.refresh(t)
     return _to_transfer_out(t)
+
+
+@router.delete("/transfers/{transfer_id}")
+def delete_transfer(
+    transfer_id: uuid.UUID,
+    request: Request,
+    db: Session = Depends(get_db),
+    me: User = Depends(require_permission("movement.approve")),
+):
+    t = db.get(Transfer, transfer_id)
+    if not t or t.tenant_id != me.tenant_id or t.is_deleted:
+        raise HTTPException(404, "Transfer kaydı bulunamadı.")
+    t.is_deleted = True
+    write_audit(
+        db,
+        tenant_id=me.tenant_id,
+        user_id=me.id,
+        action="transfer.delete",
+        entity="transfer",
+        entity_id=t.id,
+        old={"transfer_no": t.transfer_no, "status": t.status},
+        ip=client_ip(request),
+    )
+    db.commit()
+    return {"ok": True}
 
 
 # ==========================================

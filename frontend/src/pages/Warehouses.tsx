@@ -1,9 +1,10 @@
 import { useState, type FormEvent } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Building2, Layers, Loader2, MapPin, Package, Plus, X } from 'lucide-react'
+import { Building2, Edit3, Layers, Loader2, MapPin, Package, Plus, Trash2, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { api } from '@/lib/api'
 import { useAuth } from '@/lib/auth'
+import { cleanNumInput, fmtQty } from '@/lib/format'
 
 export interface LocationItem {
   id: string
@@ -143,6 +144,85 @@ export default function WarehousesPage() {
     }
   }
 
+  const handleEditStock = async (b: StockBalanceItem) => {
+    const raw = window.prompt(
+      `"${b.product_name}" için ${b.warehouse_name} deposundaki yeni stok miktarını girin (${b.unit}):`,
+      cleanNumInput(b.quantity),
+    )
+    if (raw === null) return
+    const nextQty = Number(raw.replace(',', '.'))
+    if (isNaN(nextQty) || nextQty < 0) {
+      toast.error('Geçerli bir miktar girin (0 veya daha büyük).')
+      return
+    }
+    try {
+      if (nextQty === 0) {
+        await api(`/warehouses/stock/${b.id}`, { method: 'DELETE' })
+        toast.success('Stok bakiyesi sıfırlandı ve kaldırıldı.')
+      } else {
+        await api(`/warehouses/stock/${b.id}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ quantity: String(nextQty) }),
+        })
+        toast.success('Stok miktarı güncellendi.')
+      }
+      qc.invalidateQueries({ queryKey: ['warehouse-stock'] })
+      qc.invalidateQueries({ queryKey: ['products'] })
+    } catch (err) {
+      toast.error((err as Error).message)
+    }
+  }
+
+  const handleDeleteStock = async (b: StockBalanceItem) => {
+    if (
+      !window.confirm(
+        `"${b.product_name}" ürününün ${b.warehouse_name} deposundaki (${fmtQty(b.quantity)} ${b.unit}) stok kaydını silmek istediğinize emin misiniz?`,
+      )
+    )
+      return
+    try {
+      await api(`/warehouses/stock/${b.id}`, { method: 'DELETE' })
+      toast.success('Stok kaydı silindi.')
+      qc.invalidateQueries({ queryKey: ['warehouse-stock'] })
+      qc.invalidateQueries({ queryKey: ['products'] })
+    } catch (err) {
+      toast.error((err as Error).message)
+    }
+  }
+
+  const handleDeleteLocation = async (loc: LocationItem) => {
+    if (!activeWh) return
+    if (!window.confirm(`"${loc.name} (${loc.code})" raf/bölüm kaydını silmek istediğinize emin misiniz?`))
+      return
+    try {
+      await api(`/warehouses/${activeWh.id}/locations/${loc.id}`, { method: 'DELETE' })
+      toast.success('Raf/bölüm silindi.')
+      qc.invalidateQueries({ queryKey: ['warehouses'] })
+      qc.invalidateQueries({ queryKey: ['warehouse-stock'] })
+    } catch (err) {
+      toast.error((err as Error).message)
+    }
+  }
+
+  const handleDeleteWarehouse = async (w: WarehouseItem) => {
+    if (
+      !window.confirm(
+        `"${w.name} (${w.code})" deposunu ve içindeki stok bakiyelerini silmek istediğinize emin misiniz?`,
+      )
+    )
+      return
+    try {
+      await api(`/warehouses/${w.id}`, { method: 'DELETE' })
+      toast.success('Depo silindi.')
+      if (selectedWhId === w.id) setSelectedWhId('')
+      qc.invalidateQueries({ queryKey: ['warehouses'] })
+      qc.invalidateQueries({ queryKey: ['warehouse-stock'] })
+      qc.invalidateQueries({ queryKey: ['products'] })
+    } catch (err) {
+      toast.error((err as Error).message)
+    }
+  }
+
   const inputCls =
     'w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand-500 dark:border-slate-700 dark:bg-slate-800'
 
@@ -199,7 +279,23 @@ export default function WarehousesPage() {
                     <span className="font-mono text-xs font-bold text-brand-600 dark:text-indigo-400">
                       {w.code}
                     </span>
-                    <Building2 className="h-4 w-4 text-slate-400" />
+                    <div className="flex items-center gap-1.5">
+                      {can('warehouse.manage') && warehouses.length > 1 && (
+                        <span
+                          role="button"
+                          tabIndex={0}
+                          onClick={e => {
+                            e.stopPropagation()
+                            handleDeleteWarehouse(w)
+                          }}
+                          title="Depoyu Sil"
+                          className="rounded p-1 text-slate-400 hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-950/40"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </span>
+                      )}
+                      <Building2 className="h-4 w-4 text-slate-400" />
+                    </div>
                   </div>
                   <div className="mt-2">
                     <div className="font-bold">{w.name}</div>
@@ -244,9 +340,21 @@ export default function WarehousesPage() {
                             <div className="font-mono text-xs text-slate-500">{loc.code}</div>
                           </div>
                         </div>
-                        <span className="rounded-full bg-indigo-50 px-2.5 py-0.5 text-xs font-medium text-indigo-700 dark:bg-indigo-500/15 dark:text-indigo-300">
-                          {LOC_KINDS[loc.kind] || loc.kind}
-                        </span>
+                        <div className="flex items-center gap-2">
+                          <span className="rounded-full bg-indigo-50 px-2.5 py-0.5 text-xs font-medium text-indigo-700 dark:bg-indigo-500/15 dark:text-indigo-300">
+                            {LOC_KINDS[loc.kind] || loc.kind}
+                          </span>
+                          {can('warehouse.manage') && (
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteLocation(loc)}
+                              className="rounded p-1 text-slate-400 hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-950/40"
+                              title="Raf/Bölümü Sil"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          )}
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -281,6 +389,7 @@ export default function WarehousesPage() {
                         <th className="p-3">Ürün Adı</th>
                         <th className="p-3">Raf / Bölüm</th>
                         <th className="p-3 text-right">Mevcut Miktar</th>
+                        {can('warehouse.manage') && <th className="p-3 text-right">İşlem</th>}
                       </tr>
                     </thead>
                     <tbody>
@@ -292,8 +401,30 @@ export default function WarehousesPage() {
                           <td className="p-3 font-medium">{b.product_name}</td>
                           <td className="p-3 text-slate-500">{b.location_name || 'Genel Depo Alanı'}</td>
                           <td className="p-3 text-right font-bold text-emerald-600 dark:text-emerald-400">
-                            {Number(b.quantity).toLocaleString('tr-TR')} {b.unit}
+                            {fmtQty(b.quantity)} {b.unit}
                           </td>
+                          {can('warehouse.manage') && (
+                            <td className="p-3 text-right">
+                              <div className="inline-flex items-center gap-1.5">
+                                <button
+                                  type="button"
+                                  onClick={() => handleEditStock(b)}
+                                  className="inline-flex items-center gap-1 rounded border border-slate-200 px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+                                  title="Stok Miktarını Düzenle"
+                                >
+                                  <Edit3 className="h-3.5 w-3.5" /> Düzenle
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteStock(b)}
+                                  className="inline-flex items-center gap-1 rounded border border-rose-200 px-2 py-1 text-xs font-medium text-rose-600 hover:bg-rose-50 dark:border-rose-900/50 dark:text-rose-400 dark:hover:bg-rose-950/40"
+                                  title="Bu Depodaki Stoğu Sil"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" /> Stoğu Sil
+                                </button>
+                              </div>
+                            </td>
+                          )}
                         </tr>
                       ))}
                     </tbody>

@@ -944,6 +944,64 @@ REPORT_TYPES = [
 ]
 
 
+def _get_fmt_prefs(db: Session, tenant_id: uuid.UUID) -> tuple[bool, int]:
+    """Kullanıcının ayarladığı sıfır gizleme ve ondalık basamak tercihini döner."""
+    row = db.scalar(select(Setting).where(Setting.tenant_id == tenant_id, Setting.key == "general"))
+    if row and isinstance(row.value, dict):
+        trim = bool(row.value.get("trim_trailing_zeros", True))
+        try:
+            dec = max(0, min(6, int(row.value.get("number_decimals", 0))))
+        except (TypeError, ValueError):
+            dec = 0
+        return trim, dec
+    return True, 0
+
+
+def _fmt_qty(val: Decimal | float | int | None) -> str:
+    """Miktarları gereksiz .000 kuyruğu olmadan Türkçe binlik ayraçla biçimlendirir."""
+    if val is None:
+        return "0"
+    d = Decimal(str(val)).normalize()
+    s = f"{d:f}"
+    if "." in s:
+        int_part, dec_part = s.split(".", 1)
+        dec_part = dec_part.rstrip("0")
+    else:
+        int_part, dec_part = s, ""
+    try:
+        int_formatted = f"{int(int_part):,}".replace(",", ".")
+    except ValueError:
+        int_formatted = int_part
+    return f"{int_formatted},{dec_part}" if dec_part else int_formatted
+
+
+def _fmt_money(val: Decimal | float | int | None, trim_zeros: bool = True, decimals: int = 0) -> str:
+    """Parasal tutarları Türkçe binlik ayraçla ve gereksiz .00 kuyruğu olmadan biçimlendirir."""
+    if val is None:
+        return "0"
+    fval = float(val)
+    if trim_zeros:
+        rounded = round(fval, 2)
+        if abs(rounded - round(rounded)) < 1e-9:
+            if decimals <= 0:
+                return f"{int(round(rounded)):,}".replace(",", ".")
+            return (
+                f"{int(round(rounded)):,}".replace(",", ".")
+                + ","
+                + ("0" * decimals)
+            )
+        s = f"{rounded:.2f}".rstrip("0").rstrip(".")
+        if "." in s:
+            ip, dp = s.split(".", 1)
+            return f"{int(ip):,}".replace(",", ".") + "," + dp
+        return f"{int(s):,}".replace(",", ".")
+    fmt_str = f"{fval:,.{max(0, decimals)}f}"
+    if "." in fmt_str:
+        ip, dp = fmt_str.split(".", 1)
+        return ip.replace(",", ".") + "," + dp
+    return fmt_str.replace(",", ".")
+
+
 @router.get("/reports/types")
 def get_report_types(me: User = Depends(require_permission("report.view"))):
     return REPORT_TYPES
@@ -963,6 +1021,8 @@ def generate_report_data(
     meta = next((r for r in REPORT_TYPES if r["id"] == report_id), None)
     if not meta:
         raise HTTPException(404, "Rapor türü bulunamadı.")
+
+    trim_zeros, num_decimals = _get_fmt_prefs(db, me.tenant_id)
 
     products = db.scalars(
         select(Product).where(Product.tenant_id == me.tenant_id, Product.is_deleted.is_(False))
@@ -998,10 +1058,10 @@ def generate_report_data(
                     p.inventory_code,
                     p.name,
                     p.category.name if p.category else "—",
-                    f"{qty} {p.unit}",
-                    f"{p.purchase_price or 0} {p.purchase_currency}",
-                    f"{p.current_market_value or 0} {p.market_value_currency}",
-                    f"{chosen:,.2f} {currency}",
+                    f"{_fmt_qty(qty)} {p.unit}",
+                    f"{_fmt_money(p.purchase_price or 0, trim_zeros, num_decimals)} {p.purchase_currency}",
+                    f"{_fmt_money(p.current_market_value if p.current_market_value is not None else (p.purchase_price or 0), trim_zeros, num_decimals)} {p.market_value_currency}",
+                    f"{_fmt_money(chosen, trim_zeros, num_decimals)} {currency}",
                 ]
             )
     elif report_id in {"5_by_category", "6_by_brand", "7_by_model"}:
@@ -1016,7 +1076,16 @@ def generate_report_data(
             total_qty += qty
             val = to_try((p.purchase_price or Decimal("0")) * qty, p.purchase_currency, rates) / target_rate
             total_val += val
-            rows.append([grp, p.name, p.inventory_code, f"{qty} {p.unit}", p.warehouse_name or "—", f"{val:,.2f} {currency}"])
+            rows.append(
+                [
+                    grp,
+                    p.name,
+                    p.inventory_code,
+                    f"{_fmt_qty(qty)} {p.unit}",
+                    p.warehouse_name or "—",
+                    f"{_fmt_money(val, trim_zeros, num_decimals)} {currency}",
+                ]
+            )
     elif report_id in {"8_serial_numbers", "9_by_warehouse", "10_by_location", "14_warranty_expiry"}:
         columns = ["Envanter Kodu", "Seri Numarası", "Ürün Adı", "Depo / Raf", "Garanti Bitiş", "Durum", f"Değer ({currency})"]
         for a in assets:
@@ -1031,7 +1100,7 @@ def generate_report_data(
                     f"{a.warehouse_name or '—'} / {a.shelf_section or '—'}",
                     str(a.warranty_end or "—"),
                     a.status,
-                    f"{val:,.2f} {currency}",
+                    f"{_fmt_money(val, trim_zeros, num_decimals)} {currency}",
                 ]
             )
     elif report_id == "11_project_equipment":
@@ -1045,8 +1114,8 @@ def generate_report_data(
                     pa.project.name if pa.project else "",
                     pa.product.name if pa.product else "",
                     pa.asset.serial_number if pa.asset else "—",
-                    str(pa.quantity),
-                    str(pa.quantity - pa.returned_quantity),
+                    _fmt_qty(pa.quantity),
+                    _fmt_qty(pa.quantity - pa.returned_quantity),
                     pa.status,
                 ]
             )
@@ -1062,7 +1131,7 @@ def generate_report_data(
                         asg.employee.full_name if asg.employee else "",
                         it.product.name if it.product else "",
                         it.asset.serial_number if it.asset else "—",
-                        str(it.quantity),
+                        _fmt_qty(it.quantity),
                         "İade Alındı" if it.is_returned else "Zimmette",
                         asg.delivered_at.strftime("%Y-%m-%d"),
                     ]
@@ -1082,7 +1151,7 @@ def generate_report_data(
                     s.service_company or "—",
                     str(s.sent_date),
                     s.result,
-                    f"{s.total_cost} {s.currency}",
+                    f"{_fmt_money(s.total_cost, trim_zeros, num_decimals)} {s.currency}",
                 ]
             )
     elif report_id == "15_software_licenses":
@@ -1100,7 +1169,7 @@ def generate_report_data(
                     l.key_masked,
                     f"{l.seats_used}/{l.seats_total}",
                     str(l.end_date or "Süresiz"),
-                    f"{l.cost} {l.currency}",
+                    f"{_fmt_money(l.cost, trim_zeros, num_decimals)} {l.currency}",
                 ]
             )
     elif report_id == "16_stock_movements":
@@ -1118,7 +1187,7 @@ def generate_report_data(
                     m.occurred_at.strftime("%Y-%m-%d %H:%M"),
                     m.movement_type,
                     first.product.name if first and first.product else "—",
-                    str(first.quantity if first else 0),
+                    _fmt_qty(first.quantity if first else 0),
                     f"{first.previous_location_text or '—'} → {first.new_location_text or '—'}" if first else "—",
                     m.user.full_name if m.user else "",
                 ]
@@ -1155,7 +1224,7 @@ def generate_report_data(
                     v.product.name if v.product else "",
                     v.condition,
                     v.valuation_source,
-                    f"{v.market_value} {v.currency}",
+                    f"{_fmt_money(v.market_value, trim_zeros, num_decimals)} {v.currency}",
                     v.status,
                 ]
             )
@@ -1177,7 +1246,7 @@ def generate_report_data(
         "title": meta["title"],
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "reporting_currency": currency,
-        "exchange_rate_snapshot": {k: float(v) for k, v in rates.items()},
+        "exchange_rate_snapshot": {k: round(float(v), 4) for k, v in rates.items()},
         "columns": columns,
         "rows": rows,
         "total_quantity": float(total_qty),
@@ -1252,7 +1321,7 @@ def _sync_system_notifications(db: Session, tenant_id: uuid.UUID) -> None:
         )
     ):
         if p.min_stock > 0 and p.quantity <= p.min_stock:
-            dkey = f"low_stock:{p.id}:{p.quantity}"
+            dkey = f"low_stock:{p.id}:{_fmt_qty(p.quantity)}"
             if dkey not in existing_keys:
                 db.add(
                     Notification(
@@ -1261,7 +1330,7 @@ def _sync_system_notifications(db: Session, tenant_id: uuid.UUID) -> None:
                         category="low_stock",
                         severity="warning",
                         title=f"Kritik Stok Uyarısı: {p.name}",
-                        body=f"{p.name} mevcut miktarı ({p.quantity} {p.unit}), kritik sınırın ({p.min_stock}) altındadır.",
+                        body=f"{p.name} mevcut miktarı ({_fmt_qty(p.quantity)} {p.unit}), kritik sınırın ({_fmt_qty(p.min_stock)}) altındadır.",
                         link="/envanter",
                         dedupe_key=dkey,
                     )

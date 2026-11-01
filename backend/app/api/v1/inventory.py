@@ -595,13 +595,12 @@ def list_products(
     proj_assets = db.scalars(
         select(ProjectAsset).where(
             ProjectAsset.tenant_id == me.tenant_id,
-            ProjectAsset.is_deleted.is_(False),
         )
     ).all()
     proj_map: dict[uuid.UUID, list[str]] = {}
     for pa in proj_assets:
         rem = pa.quantity - pa.returned_quantity
-        if rem > 0 and pa.project:
+        if rem > 0 and pa.project and not pa.project.is_deleted:
             label = f"{pa.project.name} ({int(rem) if rem == int(rem) else rem})"
             proj_map.setdefault(pa.product_id, []).append(label)
     proj_summaries = {k: ", ".join(v) for k, v in proj_map.items()}

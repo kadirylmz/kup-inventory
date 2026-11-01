@@ -437,7 +437,7 @@ export default function InventoryPage() {
             description: fDesc || null,
             attributes: cleanAttrs,
             min_stock: fMinStock || '0',
-            quantity: fTracking === 'quantity' ? fQty || '0' : undefined,
+            quantity: fQty || '0',
             purchase_date: fPurchaseDate || null,
             purchase_price: fPurchasePrice ? fPurchasePrice : null,
             purchase_currency: fPurchaseCurr,
@@ -483,7 +483,10 @@ export default function InventoryPage() {
             description: fDesc || null,
             attributes: cleanAttrs,
             min_stock: fMinStock || '0',
-            quantity: fTracking === 'quantity' ? fQty || '0' : String(serials.length),
+            quantity:
+              fTracking === 'serial' && serials.length > 0
+                ? String(serials.length)
+                : fQty || '0',
             purchase_date: fPurchaseDate || null,
             purchase_price: fPurchasePrice ? fPurchasePrice : null,
             purchase_currency: fPurchaseCurr,
@@ -1214,7 +1217,11 @@ export default function InventoryPage() {
                     <select
                       value={fTracking}
                       disabled={!!editingProduct}
-                      onChange={e => setFTracking(e.target.value as 'serial' | 'quantity')}
+                      onChange={e => {
+                        const val = e.target.value as 'serial' | 'quantity'
+                        setFTracking(val)
+                        if (val === 'serial') setFUnit('Adet')
+                      }}
                       className={inputCls + ' mt-1 disabled:opacity-60'}
                     >
                       <option value="serial">Seri Numarası Bazlı Tekil Cihaz Takibi</option>
@@ -1224,7 +1231,11 @@ export default function InventoryPage() {
 
                   <label className="block text-sm font-medium">
                     Birim *
-                    <select value={fUnit} onChange={e => setFUnit(e.target.value)} className={inputCls + ' mt-1'}>
+                    <select
+                      value={fUnit}
+                      onChange={e => setFUnit(e.target.value)}
+                      className={inputCls + ' mt-1'}
+                    >
                       <option value="Adet">Adet</option>
                       <option value="Metre">Metre</option>
                       <option value="Set">Set</option>
@@ -1244,47 +1255,71 @@ export default function InventoryPage() {
                   </label>
                 </div>
 
-                {fTracking === 'quantity' ? (
-                  <div className="mt-4 grid gap-4 sm:grid-cols-2">
-                    <label className="block text-sm font-medium">
-                      Mevcut Miktar ({fUnit}) *
-                      <input
-                        type="number"
-                        step="0.01"
-                        min="0"
-                        required
-                        value={fQty}
-                        onChange={e => setFQty(e.target.value)}
-                        className={inputCls + ' mt-1'}
-                      />
-                    </label>
-                    <label className="block text-sm font-medium">
-                      Kritik Stok Uyarı Seviyesi
-                      <input
-                        type="number"
-                        step="0.01"
-                        min="0"
-                        value={fMinStock}
-                        onChange={e => setFMinStock(e.target.value)}
-                        className={inputCls + ' mt-1'}
-                      />
-                    </label>
-                  </div>
-                ) : !editingProduct ? (
-                  <label className="mt-4 block text-sm font-medium">
-                    Cihaz Seri Numaraları (Her satıra veya virgülle ayırarak birden fazla seri no girebilirsiniz)
-                    <textarea
-                      rows={3}
-                      value={fSerialsText}
-                      onChange={e => setFSerialsText(e.target.value)}
-                      className={inputCls + ' mt-1 font-mono'}
-                      placeholder={'SN001\nSN002\nSN003'}
+                <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                  <label className="block text-sm font-medium">
+                    Mevcut Miktar ({fUnit}) *
+                    <input
+                      type="number"
+                      step={fUnit === 'Metre' ? '0.01' : '1'}
+                      min="0"
+                      required
+                      value={fQty}
+                      onChange={e => setFQty(e.target.value)}
+                      className={inputCls + ' mt-1'}
+                    />
+                    {fTracking === 'serial' && !editingProduct && (
+                      <span className="mt-1 block text-xs text-slate-500">
+                        {fSerialsText.trim()
+                          ? `(Girilen seri numarası sayısı: ${
+                              fSerialsText
+                                .split(/[\n,;]+/)
+                                .map(s => s.trim())
+                                .filter(Boolean).length
+                            })`
+                          : 'Seri numaralarını şimdi girmeyip sadece adet belirtebilirsiniz.'}
+                      </span>
+                    )}
+                  </label>
+                  <label className="block text-sm font-medium">
+                    Kritik Stok Uyarı Seviyesi
+                    <input
+                      type="number"
+                      step={fUnit === 'Metre' ? '0.01' : '1'}
+                      min="0"
+                      value={fMinStock}
+                      onChange={e => setFMinStock(e.target.value)}
+                      className={inputCls + ' mt-1'}
                     />
                   </label>
-                ) : (
-                  <p className="mt-3 text-xs text-slate-500">
-                    Not: Bu ürüne ait seri numaralı cihazları ürün detay çekmecesinden veya "Seri Numaralı Cihazlar" sekmesinden ekleyip düzenleyebilirsiniz.
-                  </p>
+                </div>
+
+                {fTracking === 'serial' && (
+                  !editingProduct ? (
+                    <label className="mt-4 block text-sm font-medium">
+                      Cihaz Seri Numaraları (İsteğe Bağlı - Her satıra veya virgülle yazabilirsiniz)
+                      <textarea
+                        rows={3}
+                        value={fSerialsText}
+                        onChange={e => {
+                          const text = e.target.value
+                          setFSerialsText(text)
+                          const count = text
+                            .split(/[\n,;]+/)
+                            .map(s => s.trim())
+                            .filter(Boolean).length
+                          if (count > 0) {
+                            setFQty(String(count))
+                          }
+                        }}
+                        className={inputCls + ' mt-1 font-mono'}
+                        placeholder={'SN001\nSN002\nSN003\n(Boş bırakırsanız sadece yukarıdaki adet kadar stok açılır)'}
+                      />
+                    </label>
+                  ) : (
+                    <p className="mt-3 text-xs text-slate-500">
+                      Not: Bu ürüne ait seri numaralı cihazları ürün detay çekmecesinden veya "Seri Numaralı Cihazlar" sekmesinden ekleyip düzenleyebilirsiniz.
+                    </p>
+                  )
                 )}
               </div>
 
@@ -1685,8 +1720,8 @@ export default function InventoryPage() {
                       Gönderilecek Miktar ({shiftModal.product.unit || 'Adet'}) * (Mevcut: {fmtQty(shiftModal.product.quantity)})
                       <input
                         type="number"
-                        step="any"
-                        min="0.01"
+                        step={shiftModal.product.unit === 'Metre' ? '0.01' : '1'}
+                        min={shiftModal.product.unit === 'Metre' ? '0.01' : '1'}
                         max={Number(shiftModal.product.quantity) || undefined}
                         required
                         value={shiftQty}
@@ -1703,8 +1738,8 @@ export default function InventoryPage() {
                   Gönderilecek Miktar ({shiftModal.product.unit}) * (Mevcut: {fmtQty(shiftModal.product.quantity)})
                   <input
                     type="number"
-                    step="any"
-                    min="0.01"
+                    step={shiftModal.product.unit === 'Metre' ? '0.01' : '1'}
+                    min={shiftModal.product.unit === 'Metre' ? '0.01' : '1'}
                     max={Number(shiftModal.product.quantity) || undefined}
                     required
                     value={shiftQty}

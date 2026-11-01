@@ -259,8 +259,22 @@ def send_equipment_to_project(
             qty = it.quantity
             prev_loc = prod.warehouse_name or "Depo"
             if prod.tracking_type == "quantity":
-                if body.from_warehouse_id:
-                    _adjust_balance(db, me.tenant_id, prod, body.from_warehouse_id, None, -qty)
+                from_wh_id = body.from_warehouse_id
+                if not from_wh_id:
+                    # Depo belirtilmediyse bakiyesi olan depodan otomatik düş
+                    from app.models.warehouse_assignment import StockBalance
+                    sb = db.scalar(
+                        select(StockBalance).where(
+                            StockBalance.tenant_id == me.tenant_id,
+                            StockBalance.product_id == prod.id,
+                            StockBalance.quantity > 0,
+                        ).order_by(StockBalance.quantity.desc())
+                    )
+                    if sb:
+                        from_wh_id = sb.warehouse_id
+
+                if from_wh_id:
+                    _adjust_balance(db, me.tenant_id, prod, from_wh_id, None, -qty)
                 else:
                     if (prod.quantity or Decimal("0")) < qty:
                         raise HTTPException(
@@ -342,6 +356,21 @@ def return_equipment_from_project(
         raise HTTPException(422, f"İade adedi projede kalan miktardan ({rem}) fazla olamaz.")
 
     to_wh = db.get(Warehouse, body.to_warehouse_id) if body.to_warehouse_id else None
+    if not to_wh:
+        # İade için depo belirtilmediyse varsayılan Merkez Depo'yu seç
+        to_wh = db.scalar(
+            select(Warehouse).where(
+                Warehouse.tenant_id == me.tenant_id,
+                Warehouse.is_deleted.is_(False),
+                Warehouse.code == "WH-CENTRAL",
+            )
+        ) or db.scalar(
+            select(Warehouse).where(
+                Warehouse.tenant_id == me.tenant_id,
+                Warehouse.is_deleted.is_(False),
+            ).order_by(Warehouse.created_at.asc())
+        )
+
     pa.returned_quantity += body.returned_quantity
     if pa.returned_quantity >= pa.quantity:
         pa.status = "returned"

@@ -27,6 +27,8 @@ export interface WarehouseItem {
   phone: string | null
   description: string | null
   is_active: boolean
+  total_quantity?: number | string
+  total_device_count?: number
   locations: LocationItem[]
 }
 
@@ -300,7 +302,12 @@ export default function WarehousesPage() {
                     </div>
                   </div>
                   <div className="mt-2">
-                    <div className="font-bold">{w.name}</div>
+                    <div className="flex items-baseline justify-between">
+                      <div className="font-bold">{w.name}</div>
+                      <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-bold text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300">
+                        {fmtQty(w.total_quantity || 0)} Cihaz / Ürün
+                      </span>
+                    </div>
                     <div className="text-xs text-slate-500">{WH_TYPES[w.warehouse_type] || w.warehouse_type}</div>
                   </div>
                   <div className="mt-3 flex items-center justify-between border-t border-slate-100 pt-2 text-xs text-slate-500 dark:border-slate-800">
@@ -367,7 +374,12 @@ export default function WarehousesPage() {
               <div className="rounded-xl border border-slate-200 bg-white p-5 lg:col-span-2 dark:border-slate-800 dark:bg-slate-900">
                 <div className="mb-4 flex items-center justify-between">
                   <div>
-                    <h2 className="text-base font-bold">{activeWh.name} — Mevcut Stok Bakiyeleri</h2>
+                    <div className="flex items-center gap-2">
+                      <h2 className="text-base font-bold">{activeWh.name} — Mevcut Stok Bakiyeleri</h2>
+                      <span className="rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-bold text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300">
+                        Toplam {fmtQty(activeWh.total_quantity || 0)} Cihaz / Adet
+                      </span>
+                    </div>
                     <p className="text-xs text-slate-500">
                       Adet/miktar bazlı ürünlerin bu depodaki ve raflardaki anlık miktarı
                     </p>

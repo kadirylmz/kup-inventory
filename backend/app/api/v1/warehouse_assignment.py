@@ -138,6 +138,66 @@ def _adjust_balance(
     return bal
 
 
+def _to_warehouse_out(db: Session, tenant_id: uuid.UUID, wh: Warehouse) -> WarehouseOut:
+    wo = WarehouseOut.model_validate(wh)
+    # 1. Depo bakiyeleri (StockBalance)
+    sb_sum = (
+        db.scalar(
+            select(func.coalesce(func.sum(StockBalance.quantity), 0)).where(
+                StockBalance.tenant_id == tenant_id,
+                StockBalance.warehouse_id == wh.id,
+            )
+        )
+        or Decimal("0")
+    )
+    # 2. Bu depodaki seri numaralı cihazlar
+    asset_count = (
+        db.scalar(
+            select(func.count(Asset.id)).where(
+                Asset.tenant_id == tenant_id,
+                Asset.is_deleted.is_(False),
+                Asset.warehouse_name == wh.name,
+            )
+        )
+        or 0
+    )
+
+    # 3. Ofis deposu ise aktif zimmetler
+    asg_sum = Decimal("0")
+    if wh.warehouse_type == "office":
+        asg_sum = (
+            db.scalar(
+                select(func.coalesce(func.sum(AssignmentItem.quantity - AssignmentItem.returned_quantity), 0))
+                .join(Assignment, Assignment.id == AssignmentItem.assignment_id)
+                .where(
+                    Assignment.tenant_id == tenant_id,
+                    Assignment.is_deleted.is_(False),
+                    AssignmentItem.is_returned.is_(False),
+                )
+            )
+            or Decimal("0")
+        )
+
+    # 4. Proje deposu ise aktif projelerdeki ekipmanlar
+    proj_sum = Decimal("0")
+    if wh.warehouse_type == "project":
+        from app.models.project_license_maintenance import ProjectAsset
+        proj_sum = (
+            db.scalar(
+                select(func.coalesce(func.sum(ProjectAsset.quantity - ProjectAsset.returned_quantity), 0)).where(
+                    ProjectAsset.tenant_id == tenant_id,
+                    ProjectAsset.status == "in_project",
+                )
+            )
+            or Decimal("0")
+        )
+
+    total_qty = sb_sum + Decimal(str(asset_count)) + asg_sum + proj_sum
+    wo.total_quantity = total_qty
+    wo.total_device_count = int(total_qty)
+    return wo
+
+
 # ==========================================
 # 1. WAREHOUSES & LOCATIONS
 # ==========================================
@@ -146,11 +206,12 @@ def list_warehouses(
     db: Session = Depends(get_db),
     me: User = Depends(require_permission("warehouse.view")),
 ):
-    return db.scalars(
+    whs = db.scalars(
         select(Warehouse)
         .where(Warehouse.tenant_id == me.tenant_id, Warehouse.is_deleted.is_(False))
         .order_by(Warehouse.name)
     ).all()
+    return [_to_warehouse_out(db, me.tenant_id, w) for w in whs]
 
 
 @router.post("/warehouses", response_model=WarehouseOut, status_code=201)

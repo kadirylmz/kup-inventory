@@ -78,6 +78,8 @@ class WarehouseOut(BaseModel):
     phone: str | None
     description: str | None
     is_active: bool
+    total_quantity: Decimal = Decimal("0")
+    total_device_count: int = 0
     locations: list[LocationOut] = []
 
 

@@ -227,21 +227,44 @@ def research_market_value(
         .limit(5)
     ).all()
 
-    if not history:
+    if not history and prod.model_id:
+        history = db.scalars(
+            select(Valuation)
+            .join(Product, Valuation.product_id == Product.id)
+            .where(
+                Valuation.tenant_id == me.tenant_id,
+                Product.model_id == prod.model_id,
+                Valuation.status == "approved",
+            )
+            .order_by(Valuation.valuation_date.desc())
+            .limit(5)
+        ).all()
+
+    if history:
+        avg_val = sum((h.market_value for h in history), Decimal("0")) / Decimal(str(len(history)))
         return {
-            "found_reliable_source": False,
-            "message": "Bu marka/model için doğrulanmış güvenilir ikinci el fiyat kaynağı bulunamadı. Sistem kuralı gereği uydurma değer üretilmez; lütfen piyasa araştırması sonucunu manuel girin.",
-            "suggested_value": None,
+            "found_reliable_source": True,
+            "message": f"Sistemdeki son {len(history)} onaylı değerleme kaydına dayalı referans bulundu. Onayınız olmadan uygulanmaz.",
+            "suggested_value": float(avg_val.quantize(Decimal("0.01"))),
+            "currency": history[0].currency,
+            "source": f"Geçmiş Onaylı Değerleme Ortalaması ({history[0].valuation_source})",
+            "condition": condition,
         }
 
-    avg_val = sum((h.market_value for h in history), Decimal("0")) / Decimal(str(len(history)))
+    if prod.current_market_value is not None and prod.current_market_value > 0:
+        return {
+            "found_reliable_source": True,
+            "message": "Ürün kartında tanımlı güncel ikinci el piyasa değeri referans olarak çekildi. Onayınız olmadan uygulanmaz.",
+            "suggested_value": float(prod.current_market_value),
+            "currency": prod.market_value_currency or "TRY",
+            "source": "Ürün Kartı Güncel Piyasa Değeri Kaydı",
+            "condition": condition,
+        }
+
     return {
-        "found_reliable_source": True,
-        "message": f"Sistemdeki son {len(history)} onaylı değerleme kaydına dayalı referans bulundu. Onayınız olmadan uygulanmaz.",
-        "suggested_value": float(avg_val.quantize(Decimal("0.01"))),
-        "currency": history[0].currency,
-        "source": f"Geçmiş Onaylı Değerleme Ortalaması ({history[0].valuation_source})",
-        "condition": condition,
+        "found_reliable_source": False,
+        "message": "Bu marka/model için doğrulanmış güvenilir ikinci el fiyat kaynağı bulunamadı. Sistem kuralı gereği uydurma değer üretilmez; lütfen piyasa araştırması sonucunu manuel girin.",
+        "suggested_value": None,
     }
 
 
@@ -290,6 +313,16 @@ def create_valuation(
             prod.current_market_value = body.market_value
             prod.market_value_currency = body.currency
             prod.last_valuation_date = vdate
+            for a in db.scalars(
+                select(Asset).where(
+                    Asset.tenant_id == me.tenant_id,
+                    Asset.product_id == prod.id,
+                    Asset.is_deleted.is_(False),
+                )
+            ):
+                a.current_market_value = body.market_value
+                a.market_value_currency = body.currency
+                a.last_valuation_date = vdate
 
     db.flush()
     write_audit(
@@ -334,6 +367,16 @@ def approve_proposed_valuation(
         val.product.current_market_value = val.market_value
         val.product.market_value_currency = val.currency
         val.product.last_valuation_date = val.valuation_date
+        for a in db.scalars(
+            select(Asset).where(
+                Asset.tenant_id == me.tenant_id,
+                Asset.product_id == val.product.id,
+                Asset.is_deleted.is_(False),
+            )
+        ):
+            a.current_market_value = val.market_value
+            a.market_value_currency = val.currency
+            a.last_valuation_date = val.valuation_date
 
     write_audit(
         db,
@@ -691,6 +734,122 @@ def scan_stocktake_item(
             )
         )
 
+    db.commit()
+    db.refresh(st)
+    return _to_stocktake_out(st)
+
+
+class StocktakeUpdateIn(BaseModel):
+    count_date: date | None = None
+    note: str | None = None
+
+
+@router.patch("/stocktakes/{stocktake_id}")
+def update_stocktake(
+    stocktake_id: uuid.UUID,
+    body: StocktakeUpdateIn,
+    request: Request,
+    db: Session = Depends(get_db),
+    me: User = Depends(require_permission("stocktake.perform")),
+):
+    st = db.get(Stocktake, stocktake_id)
+    if not st or st.tenant_id != me.tenant_id or st.is_deleted:
+        raise HTTPException(404, "Sayım oturumu bulunamadı.")
+    if body.count_date is not None:
+        st.count_date = body.count_date
+    if body.note is not None:
+        st.note = body.note
+    write_audit(
+        db,
+        tenant_id=me.tenant_id,
+        user_id=me.id,
+        action="stocktake.update",
+        entity="stocktake",
+        entity_id=st.id,
+        new={"note": st.note, "count_date": str(st.count_date)},
+        ip=client_ip(request),
+    )
+    db.commit()
+    db.refresh(st)
+    return _to_stocktake_out(st)
+
+
+@router.delete("/stocktakes/{stocktake_id}")
+def delete_stocktake(
+    stocktake_id: uuid.UUID,
+    request: Request,
+    db: Session = Depends(get_db),
+    me: User = Depends(require_permission("stocktake.perform")),
+):
+    st = db.get(Stocktake, stocktake_id)
+    if not st or st.tenant_id != me.tenant_id or st.is_deleted:
+        raise HTTPException(404, "Sayım oturumu bulunamadı.")
+    st.is_deleted = True
+    write_audit(
+        db,
+        tenant_id=me.tenant_id,
+        user_id=me.id,
+        action="stocktake.delete",
+        entity="stocktake",
+        entity_id=st.id,
+        old={"stocktake_no": st.stocktake_no},
+        ip=client_ip(request),
+    )
+    db.commit()
+    return {"ok": True}
+
+
+class StocktakeItemUpdateIn(BaseModel):
+    result: str | None = None
+    counted_qty: Decimal | None = None
+    note: str | None = None
+
+
+@router.patch("/stocktakes/{stocktake_id}/items/{item_id}")
+def update_stocktake_item(
+    stocktake_id: uuid.UUID,
+    item_id: uuid.UUID,
+    body: StocktakeItemUpdateIn,
+    db: Session = Depends(get_db),
+    me: User = Depends(require_permission("stocktake.perform")),
+):
+    st = db.get(Stocktake, stocktake_id)
+    if not st or st.tenant_id != me.tenant_id or st.is_deleted:
+        raise HTTPException(404, "Sayım oturumu bulunamadı.")
+    it = db.get(StocktakeItem, item_id)
+    if not it or it.stocktake_id != st.id:
+        raise HTTPException(404, "Sayım kalemi bulunamadı.")
+    if body.result is not None:
+        it.result = body.result
+        if body.result == "found":
+            it.counted_qty = Decimal("1")
+            it.found_warehouse_name = st.warehouse.name if st.warehouse else None
+        elif body.result == "missing":
+            it.counted_qty = Decimal("0")
+            it.found_warehouse_name = None
+    if body.counted_qty is not None:
+        it.counted_qty = body.counted_qty
+    if body.note is not None:
+        it.note = body.note
+    db.commit()
+    db.refresh(st)
+    return _to_stocktake_out(st)
+
+
+@router.delete("/stocktakes/{stocktake_id}/items/{item_id}")
+def delete_stocktake_item(
+    stocktake_id: uuid.UUID,
+    item_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    me: User = Depends(require_permission("stocktake.perform")),
+):
+    st = db.get(Stocktake, stocktake_id)
+    if not st or st.tenant_id != me.tenant_id or st.is_deleted:
+        raise HTTPException(404, "Sayım oturumu bulunamadı.")
+    it = db.get(StocktakeItem, item_id)
+    if not it or it.stocktake_id != st.id:
+        raise HTTPException(404, "Sayım kalemi bulunamadı.")
+    db.delete(it)
     db.commit()
     db.refresh(st)
     return _to_stocktake_out(st)

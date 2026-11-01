@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Boxes, Building, Cpu, Loader2, Plus, Trash2, X } from 'lucide-react'
+import { Boxes, Building, Cpu, Edit3, Loader2, Plus, Trash2, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { api } from '@/lib/api'
 import { useAuth } from '@/lib/auth'
@@ -42,18 +42,21 @@ export default function BrandsModelsPage() {
   const [tab, setTab] = useState<'brands' | 'models' | 'suppliers'>('brands')
 
   const [brandModal, setBrandModal] = useState(false)
+  const [editingBrand, setEditingBrand] = useState<BrandItem | null>(null)
   const [bName, setBName] = useState('')
   const [bCountry, setBCountry] = useState('')
   const [bWeb, setBWeb] = useState('')
   const [bDesc, setBDesc] = useState('')
 
   const [modelModal, setModelModal] = useState(false)
+  const [editingModel, setEditingModel] = useState<ModelItem | null>(null)
   const [mBrandId, setMBrandId] = useState('')
   const [mName, setMName] = useState('')
   const [mDesc, setMDesc] = useState('')
   const [mSpecs, setMSpecs] = useState<{ k: string; v: string }[]>([{ k: '', v: '' }])
 
   const [supModal, setSupModal] = useState(false)
+  const [editingSup, setEditingSup] = useState<SupplierItem | null>(null)
   const [sName, setSName] = useState('')
   const [sContact, setSContact] = useState('')
   const [sTax, setSTax] = useState('')
@@ -73,79 +76,195 @@ export default function BrandsModelsPage() {
     queryFn: () => api<SupplierItem[]>('/suppliers'),
   })
 
-  const createBrand = async (e: FormEvent) => {
+  const openBrandCreate = () => {
+    setEditingBrand(null)
+    setBName('')
+    setBCountry('')
+    setBWeb('')
+    setBDesc('')
+    setBrandModal(true)
+  }
+
+  const openBrandEdit = (b: BrandItem) => {
+    setEditingBrand(b)
+    setBName(b.name)
+    setBCountry(b.country || '')
+    setBWeb(b.website || '')
+    setBDesc(b.description || '')
+    setBrandModal(true)
+  }
+
+  const saveBrand = async (e: FormEvent) => {
     e.preventDefault()
     try {
-      await api('/brands', {
-        method: 'POST',
-        body: JSON.stringify({
-          name: bName,
-          country: bCountry || null,
-          website: bWeb || null,
-          description: bDesc || null,
-        }),
-      })
-      toast.success('Marka eklendi.')
+      const payload = {
+        name: bName,
+        country: bCountry || null,
+        website: bWeb || null,
+        description: bDesc || null,
+      }
+      if (editingBrand) {
+        await api(`/brands/${editingBrand.id}`, {
+          method: 'PATCH',
+          body: JSON.stringify(payload),
+        })
+        toast.success('Marka güncellendi.')
+      } else {
+        await api('/brands', {
+          method: 'POST',
+          body: JSON.stringify(payload),
+        })
+        toast.success('Marka eklendi.')
+      }
       qc.invalidateQueries({ queryKey: ['brands'] })
+      qc.invalidateQueries({ queryKey: ['models'] })
+      qc.invalidateQueries({ queryKey: ['products'] })
       setBrandModal(false)
-      setBName('')
-      setBCountry('')
-      setBWeb('')
-      setBDesc('')
+      setEditingBrand(null)
     } catch (err) {
       toast.error((err as Error).message)
     }
   }
 
-  const createModel = async (e: FormEvent) => {
+  const deleteBrand = async (b: BrandItem) => {
+    if (!window.confirm(`"${b.name}" markasını silmek istediğinize emin misiniz?`)) return
+    try {
+      await api(`/brands/${b.id}`, { method: 'DELETE' })
+      toast.success('Marka silindi.')
+      qc.invalidateQueries({ queryKey: ['brands'] })
+    } catch (err) {
+      toast.error((err as Error).message)
+    }
+  }
+
+  const openModelCreate = () => {
+    if (!brands.length) {
+      toast.error('Önce en az bir marka ekleyin.')
+      return
+    }
+    setEditingModel(null)
+    setMBrandId(brands[0].id)
+    setMName('')
+    setMDesc('')
+    setMSpecs([{ k: '', v: '' }])
+    setModelModal(true)
+  }
+
+  const openModelEdit = (m: ModelItem) => {
+    setEditingModel(m)
+    setMBrandId(m.brand_id)
+    setMName(m.name)
+    setMDesc(m.description || '')
+    const entries = m.specs ? Object.entries(m.specs).map(([k, v]) => ({ k, v })) : []
+    setMSpecs(entries.length ? entries : [{ k: '', v: '' }])
+    setModelModal(true)
+  }
+
+  const saveModel = async (e: FormEvent) => {
     e.preventDefault()
     const specsObj: Record<string, string> = {}
     mSpecs.forEach(pair => {
       if (pair.k.trim() && pair.v.trim()) specsObj[pair.k.trim()] = pair.v.trim()
     })
     try {
-      await api('/models', {
-        method: 'POST',
-        body: JSON.stringify({
-          brand_id: mBrandId,
-          name: mName,
-          description: mDesc || null,
-          specs: Object.keys(specsObj).length ? specsObj : null,
-        }),
-      })
-      toast.success('Model eklendi.')
+      const payload = {
+        brand_id: mBrandId,
+        name: mName,
+        description: mDesc || null,
+        specs: Object.keys(specsObj).length ? specsObj : null,
+      }
+      if (editingModel) {
+        await api(`/models/${editingModel.id}`, {
+          method: 'PATCH',
+          body: JSON.stringify(payload),
+        })
+        toast.success('Model güncellendi.')
+      } else {
+        await api('/models', {
+          method: 'POST',
+          body: JSON.stringify(payload),
+        })
+        toast.success('Model eklendi.')
+      }
       qc.invalidateQueries({ queryKey: ['models'] })
       qc.invalidateQueries({ queryKey: ['brands'] })
+      qc.invalidateQueries({ queryKey: ['products'] })
       setModelModal(false)
-      setMName('')
-      setMDesc('')
-      setMSpecs([{ k: '', v: '' }])
+      setEditingModel(null)
     } catch (err) {
       toast.error((err as Error).message)
     }
   }
 
-  const createSupplier = async (e: FormEvent) => {
+  const deleteModel = async (m: ModelItem) => {
+    if (!window.confirm(`"${m.name}" modelini silmek istediğinize emin misiniz?`)) return
+    try {
+      await api(`/models/${m.id}`, { method: 'DELETE' })
+      toast.success('Model silindi.')
+      qc.invalidateQueries({ queryKey: ['models'] })
+      qc.invalidateQueries({ queryKey: ['brands'] })
+    } catch (err) {
+      toast.error((err as Error).message)
+    }
+  }
+
+  const openSupCreate = () => {
+    setEditingSup(null)
+    setSName('')
+    setSContact('')
+    setSTax('')
+    setSPhone('')
+    setSEmail('')
+    setSupModal(true)
+  }
+
+  const openSupEdit = (s: SupplierItem) => {
+    setEditingSup(s)
+    setSName(s.name)
+    setSContact(s.contact_person || '')
+    setSTax(s.tax_no || '')
+    setSPhone(s.phone || '')
+    setSEmail(s.email || '')
+    setSupModal(true)
+  }
+
+  const saveSupplier = async (e: FormEvent) => {
     e.preventDefault()
     try {
-      await api('/suppliers', {
-        method: 'POST',
-        body: JSON.stringify({
-          name: sName,
-          contact_person: sContact || null,
-          tax_no: sTax || null,
-          phone: sPhone || null,
-          email: sEmail || null,
-        }),
-      })
-      toast.success('Tedarikçi eklendi.')
+      const payload = {
+        name: sName,
+        contact_person: sContact || null,
+        tax_no: sTax || null,
+        phone: sPhone || null,
+        email: sEmail || null,
+      }
+      if (editingSup) {
+        await api(`/suppliers/${editingSup.id}`, {
+          method: 'PATCH',
+          body: JSON.stringify(payload),
+        })
+        toast.success('Tedarikçi güncellendi.')
+      } else {
+        await api('/suppliers', {
+          method: 'POST',
+          body: JSON.stringify(payload),
+        })
+        toast.success('Tedarikçi eklendi.')
+      }
       qc.invalidateQueries({ queryKey: ['suppliers'] })
       setSupModal(false)
-      setSName('')
-      setSContact('')
-      setSTax('')
-      setSPhone('')
-      setSEmail('')
+      setEditingSup(null)
+    } catch (err) {
+      toast.error((err as Error).message)
+    }
+  }
+
+  const deleteSupplier = async (s: SupplierItem) => {
+    if (!window.confirm(`"${s.name}" tedarikçisini silmek istediğinize emin misiniz?`)) return
+    try {
+      await api(`/suppliers/${s.id}`, { method: 'DELETE' })
+      toast.success('Tedarikçi silindi.')
+      qc.invalidateQueries({ queryKey: ['suppliers'] })
     } catch (err) {
       toast.error((err as Error).message)
     }
@@ -168,20 +287,13 @@ export default function BrandsModelsPage() {
           {can('brand.manage') && (
             <>
               <button
-                onClick={() => setBrandModal(true)}
+                onClick={openBrandCreate}
                 className="flex items-center gap-1.5 rounded-lg bg-brand-600 px-3.5 py-2 text-sm font-semibold text-white hover:bg-brand-700"
               >
                 <Plus className="h-4 w-4" /> Yeni Marka
               </button>
               <button
-                onClick={() => {
-                  if (!brands.length) {
-                    toast.error('Önce en az bir marka ekleyin.')
-                    return
-                  }
-                  setMBrandId(brands[0].id)
-                  setModelModal(true)
-                }}
+                onClick={openModelCreate}
                 className="flex items-center gap-1.5 rounded-lg border border-brand-600 px-3.5 py-2 text-sm font-semibold text-brand-600 hover:bg-brand-50 dark:text-indigo-400 dark:hover:bg-slate-800"
               >
                 <Plus className="h-4 w-4" /> Yeni Model
@@ -190,7 +302,7 @@ export default function BrandsModelsPage() {
           )}
           {can('product.create') && (
             <button
-              onClick={() => setSupModal(true)}
+              onClick={openSupCreate}
               className="flex items-center gap-1.5 rounded-lg border border-slate-300 px-3.5 py-2 text-sm font-semibold hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800"
             >
               <Plus className="h-4 w-4" /> Yeni Tedarikçi
@@ -239,6 +351,7 @@ export default function BrandsModelsPage() {
                   <th className="p-3.5">Web Sitesi</th>
                   <th className="p-3.5">Kayıtlı Model</th>
                   <th className="p-3.5">Açıklama</th>
+                  <th className="p-3.5 text-right">İşlem</th>
                 </tr>
               </thead>
               <tbody>
@@ -249,6 +362,24 @@ export default function BrandsModelsPage() {
                     <td className="p-3.5 text-brand-600">{b.website || '—'}</td>
                     <td className="p-3.5 font-semibold">{b.model_count}</td>
                     <td className="p-3.5 text-slate-500">{b.description || '—'}</td>
+                    <td className="p-3.5 text-right">
+                      {can('brand.manage') && (
+                        <div className="inline-flex items-center gap-1">
+                          <button
+                            onClick={() => openBrandEdit(b)}
+                            className="inline-flex items-center gap-1 rounded border border-slate-200 px-2 py-1 text-xs hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800"
+                          >
+                            <Edit3 className="h-3.5 w-3.5" /> Düzenle
+                          </button>
+                          <button
+                            onClick={() => deleteBrand(b)}
+                            className="inline-flex items-center rounded border border-rose-200 p-1 text-rose-600 hover:bg-rose-50 dark:border-rose-900/50"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -274,6 +405,7 @@ export default function BrandsModelsPage() {
                   <th className="p-3.5">Model Adı</th>
                   <th className="p-3.5">Teknik Özellikler</th>
                   <th className="p-3.5">Açıklama</th>
+                  <th className="p-3.5 text-right">İşlem</th>
                 </tr>
               </thead>
               <tbody>
@@ -298,6 +430,24 @@ export default function BrandsModelsPage() {
                       )}
                     </td>
                     <td className="p-3.5 text-slate-500">{m.description || '—'}</td>
+                    <td className="p-3.5 text-right">
+                      {can('brand.manage') && (
+                        <div className="inline-flex items-center gap-1">
+                          <button
+                            onClick={() => openModelEdit(m)}
+                            className="inline-flex items-center gap-1 rounded border border-slate-200 px-2 py-1 text-xs hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800"
+                          >
+                            <Edit3 className="h-3.5 w-3.5" /> Düzenle
+                          </button>
+                          <button
+                            onClick={() => deleteModel(m)}
+                            className="inline-flex items-center rounded border border-rose-200 p-1 text-rose-600 hover:bg-rose-50 dark:border-rose-900/50"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -324,6 +474,7 @@ export default function BrandsModelsPage() {
                   <th className="p-3.5">Vergi No</th>
                   <th className="p-3.5">Telefon</th>
                   <th className="p-3.5">E-posta</th>
+                  <th className="p-3.5 text-right">İşlem</th>
                 </tr>
               </thead>
               <tbody>
@@ -334,6 +485,24 @@ export default function BrandsModelsPage() {
                     <td className="p-3.5">{s.tax_no || '—'}</td>
                     <td className="p-3.5">{s.phone || '—'}</td>
                     <td className="p-3.5">{s.email || '—'}</td>
+                    <td className="p-3.5 text-right">
+                      {can('product.update') && (
+                        <div className="inline-flex items-center gap-1">
+                          <button
+                            onClick={() => openSupEdit(s)}
+                            className="inline-flex items-center gap-1 rounded border border-slate-200 px-2 py-1 text-xs hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800"
+                          >
+                            <Edit3 className="h-3.5 w-3.5" /> Düzenle
+                          </button>
+                          <button
+                            onClick={() => deleteSupplier(s)}
+                            className="inline-flex items-center rounded border border-rose-200 p-1 text-rose-600 hover:bg-rose-50 dark:border-rose-900/50"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -342,15 +511,15 @@ export default function BrandsModelsPage() {
         </div>
       )}
 
-      {/* Marka Ekle Modalı */}
+      {/* Marka Ekle / Düzenle Modalı */}
       {brandModal && (
         <div className="fixed inset-0 z-50 grid place-items-center bg-black/50 p-4">
           <form
-            onSubmit={createBrand}
+            onSubmit={saveBrand}
             className="w-full max-w-md space-y-4 rounded-2xl bg-white p-6 shadow-xl dark:bg-slate-900"
           >
             <div className="flex items-center justify-between">
-              <h2 className="text-lg font-bold">Yeni Marka Ekle</h2>
+              <h2 className="text-lg font-bold">{editingBrand ? 'Markayı Düzenle' : 'Yeni Marka Ekle'}</h2>
               <button type="button" onClick={() => setBrandModal(false)}>
                 <X className="h-5 w-5 text-slate-400" />
               </button>
@@ -408,15 +577,15 @@ export default function BrandsModelsPage() {
         </div>
       )}
 
-      {/* Model Ekle Modalı */}
+      {/* Model Ekle / Düzenle Modalı */}
       {modelModal && (
         <div className="fixed inset-0 z-50 grid place-items-center bg-black/50 p-4">
           <form
-            onSubmit={createModel}
+            onSubmit={saveModel}
             className="w-full max-w-lg space-y-4 rounded-2xl bg-white p-6 shadow-xl dark:bg-slate-900"
           >
             <div className="flex items-center justify-between">
-              <h2 className="text-lg font-bold">Yeni Model Ekle</h2>
+              <h2 className="text-lg font-bold">{editingModel ? 'Modeli Düzenle' : 'Yeni Model Ekle'}</h2>
               <button type="button" onClick={() => setModelModal(false)}>
                 <X className="h-5 w-5 text-slate-400" />
               </button>
@@ -516,15 +685,15 @@ export default function BrandsModelsPage() {
         </div>
       )}
 
-      {/* Tedarikçi Ekle Modalı */}
+      {/* Tedarikçi Ekle / Düzenle Modalı */}
       {supModal && (
         <div className="fixed inset-0 z-50 grid place-items-center bg-black/50 p-4">
           <form
-            onSubmit={createSupplier}
+            onSubmit={saveSupplier}
             className="w-full max-w-md space-y-4 rounded-2xl bg-white p-6 shadow-xl dark:bg-slate-900"
           >
             <div className="flex items-center justify-between">
-              <h2 className="text-lg font-bold">Yeni Tedarikçi Firma Ekle</h2>
+              <h2 className="text-lg font-bold">{editingSup ? 'Tedarikçiyi Düzenle' : 'Yeni Tedarikçi Firma Ekle'}</h2>
               <button type="button" onClick={() => setSupModal(false)}>
                 <X className="h-5 w-5 text-slate-400" />
               </button>

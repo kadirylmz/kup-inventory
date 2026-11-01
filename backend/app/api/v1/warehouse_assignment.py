@@ -76,16 +76,42 @@ def _adjust_balance(
     )
     if not bal:
         if delta < 0:
-            raise HTTPException(422, f"'{product.name}' için seçilen depoda yeterli stok yok (Mevcut: 0).")
-        bal = StockBalance(
-            tenant_id=tenant_id,
-            product_id=product.id,
-            warehouse_id=warehouse_id,
-            location_id=location_id,
-            quantity=Decimal("0"),
-        )
-        db.add(bal)
-        db.flush()
+            # Eğer ürün doğrudan Envanter Kataloğundan quantity > 0 olarak girildiyse ve henüz StockBalance satırı yoksa:
+            existing_sum = (
+                db.scalar(
+                    select(func.coalesce(func.sum(StockBalance.quantity), 0)).where(
+                        StockBalance.tenant_id == tenant_id,
+                        StockBalance.product_id == product.id,
+                    )
+                )
+                or Decimal("0")
+            )
+            untracked_qty = max(Decimal("0"), (product.quantity or Decimal("0")) - Decimal(str(existing_sum)))
+            if untracked_qty >= abs(delta):
+                bal = StockBalance(
+                    tenant_id=tenant_id,
+                    product_id=product.id,
+                    warehouse_id=warehouse_id,
+                    location_id=location_id,
+                    quantity=untracked_qty,
+                )
+                db.add(bal)
+                db.flush()
+            else:
+                raise HTTPException(
+                    422,
+                    f"'{product.name}' için seçilen depoda yeterli stok yok (Mevcut: {untracked_qty}).",
+                )
+        else:
+            bal = StockBalance(
+                tenant_id=tenant_id,
+                product_id=product.id,
+                warehouse_id=warehouse_id,
+                location_id=location_id,
+                quantity=Decimal("0"),
+            )
+            db.add(bal)
+            db.flush()
 
     new_qty = bal.quantity + delta
     if new_qty < 0:

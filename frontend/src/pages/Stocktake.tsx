@@ -1,6 +1,16 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { AlertTriangle, CheckCircle2, ClipboardCheck, Plus, QrCode, ShieldAlert } from 'lucide-react'
+import {
+  AlertTriangle,
+  CheckCircle2,
+  ClipboardCheck,
+  Edit3,
+  Plus,
+  QrCode,
+  ShieldAlert,
+  Trash2,
+  X,
+} from 'lucide-react'
 import { toast } from 'sonner'
 import { api, ApiError } from '@/lib/api'
 
@@ -46,6 +56,9 @@ export default function StocktakePage() {
   const qc = useQueryClient()
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [modalOpen, setModalOpen] = useState(false)
+  const [editModal, setEditModal] = useState<StocktakeRow | null>(null)
+  const [editDate, setEditDate] = useState('')
+  const [editNote, setEditNote] = useState('')
   const [scanInput, setScanInput] = useState('')
   const [form, setForm] = useState({ warehouse_id: '', note: '' })
 
@@ -72,6 +85,30 @@ export default function StocktakePage() {
     onError: (e: ApiError) => toast.error(e.message),
   })
 
+  const updateStocktakeMut = useMutation({
+    mutationFn: () =>
+      api<StocktakeRow>(`/stocktakes/${editModal?.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ count_date: editDate || null, note: editNote }),
+      }),
+    onSuccess: () => {
+      toast.success('Sayım oturumu bilgileri güncellendi.')
+      setEditModal(null)
+      qc.invalidateQueries({ queryKey: ['stocktakes'] })
+    },
+    onError: (e: ApiError) => toast.error(e.message),
+  })
+
+  const deleteStocktakeMut = useMutation({
+    mutationFn: (id: string) => api(`/stocktakes/${id}`, { method: 'DELETE' }),
+    onSuccess: () => {
+      toast.success('Sayım oturumu silindi.')
+      setSelectedId(null)
+      qc.invalidateQueries({ queryKey: ['stocktakes'] })
+    },
+    onError: (e: ApiError) => toast.error(e.message),
+  })
+
   const scanMut = useMutation({
     mutationFn: (code: string) =>
       api<StocktakeRow>(`/stocktakes/${activeStocktake?.id}/scan`, {
@@ -81,6 +118,31 @@ export default function StocktakePage() {
     onSuccess: () => {
       toast.success('Barkod / QR / Seri numarası sayım listesine işlendi.')
       setScanInput('')
+      qc.invalidateQueries({ queryKey: ['stocktakes'] })
+    },
+    onError: (e: ApiError) => toast.error(e.message),
+  })
+
+  const updateItemMut = useMutation({
+    mutationFn: ({ itemId, result }: { itemId: string; result: string }) =>
+      api<StocktakeRow>(`/stocktakes/${activeStocktake?.id}/items/${itemId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ result }),
+      }),
+    onSuccess: () => {
+      toast.success('Sayım satırı durumu güncellendi.')
+      qc.invalidateQueries({ queryKey: ['stocktakes'] })
+    },
+    onError: (e: ApiError) => toast.error(e.message),
+  })
+
+  const deleteItemMut = useMutation({
+    mutationFn: (itemId: string) =>
+      api<StocktakeRow>(`/stocktakes/${activeStocktake?.id}/items/${itemId}`, {
+        method: 'DELETE',
+      }),
+    onSuccess: () => {
+      toast.success('Sayım satırı listeden kaldırıldı.')
       qc.invalidateQueries({ queryKey: ['stocktakes'] })
     },
     onError: (e: ApiError) => toast.error(e.message),
@@ -97,13 +159,19 @@ export default function StocktakePage() {
     onError: (e: ApiError) => toast.error(e.message),
   })
 
+  const openEditStocktake = (st: StocktakeRow) => {
+    setEditModal(st)
+    setEditDate(st.count_date)
+    setEditNote(st.note || '')
+  }
+
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold">Depo Sayım ve Mutabakat Modülü</h1>
           <p className="text-sm text-slate-500">
-            Depo bazlı fiziksel sayım, QR / seri numarası okutma, eksik/fazla/yanlış lokasyon tespiti ve sayım onayı
+            Depo bazlı fiziksel sayım, QR / seri numarası okutma, eksik/fazla/yanlış lokasyon tespiti ve sayım düzenleme
           </p>
         </div>
         <button
@@ -127,10 +195,10 @@ export default function StocktakePage() {
             </div>
           ) : (
             stocktakes.map(st => (
-              <button
+              <div
                 key={st.id}
                 onClick={() => setSelectedId(st.id)}
-                className={`w-full rounded-xl border p-3.5 text-left transition ${
+                className={`cursor-pointer rounded-xl border p-3.5 text-left transition ${
                   activeStocktake?.id === st.id
                     ? 'border-brand-600 bg-brand-50/50 dark:bg-indigo-950/30'
                     : 'border-slate-200 bg-white hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900'
@@ -150,7 +218,32 @@ export default function StocktakePage() {
                 <div className="mt-0.5 text-xs text-slate-500">
                   {st.count_date} • {st.responsible_name}
                 </div>
-              </button>
+                {st.note && <div className="mt-1 text-xs text-slate-400 line-clamp-1">{st.note}</div>}
+                <div className="mt-2.5 flex items-center justify-end gap-1.5 border-t border-slate-100 pt-2 dark:border-slate-800">
+                  <button
+                    type="button"
+                    onClick={e => {
+                      e.stopPropagation()
+                      openEditStocktake(st)
+                    }}
+                    className="inline-flex items-center gap-1 rounded border border-slate-200 px-2 py-0.5 text-[11px] font-medium hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800"
+                  >
+                    <Edit3 className="h-3 w-3" /> Düzenle
+                  </button>
+                  <button
+                    type="button"
+                    onClick={e => {
+                      e.stopPropagation()
+                      if (window.confirm(`${st.stocktake_no} numaralı sayım oturumunu silmek istediğinize emin misiniz?`)) {
+                        deleteStocktakeMut.mutate(st.id)
+                      }
+                    }}
+                    className="inline-flex items-center gap-1 rounded border border-rose-200 px-2 py-0.5 text-[11px] font-medium text-rose-600 hover:bg-rose-50 dark:border-rose-900/50"
+                  >
+                    <Trash2 className="h-3 w-3" /> Sil
+                  </button>
+                </div>
+              </div>
             ))
           )}
         </div>
@@ -169,6 +262,42 @@ export default function StocktakePage() {
             </div>
           ) : (
             <>
+              {/* Sayım Başlık ve Hızlı Düzenleme / Silme */}
+              <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white p-3.5 dark:border-slate-800 dark:bg-slate-900">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono text-sm font-bold text-brand-600">{activeStocktake.stocktake_no}</span>
+                    <span className="font-semibold">{activeStocktake.warehouse_name}</span>
+                  </div>
+                  <div className="text-xs text-slate-500">
+                    Tarih: {activeStocktake.count_date} • Sorumlu: {activeStocktake.responsible_name}
+                    {activeStocktake.note ? ` • Not: ${activeStocktake.note}` : ''}
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => openEditStocktake(activeStocktake)}
+                    className="inline-flex items-center gap-1 rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800"
+                  >
+                    <Edit3 className="h-3.5 w-3.5" /> Sayımı Düzenle
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (
+                        window.confirm(
+                          `${activeStocktake.stocktake_no} numaralı sayım oturumunu silmek istediğinize emin misiniz?`,
+                        )
+                      ) {
+                        deleteStocktakeMut.mutate(activeStocktake.id)
+                      }
+                    }}
+                    className="inline-flex items-center gap-1 rounded-lg border border-rose-200 px-3 py-1.5 text-xs font-semibold text-rose-600 hover:bg-rose-50 dark:border-rose-900/50"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" /> Sayımı Sil
+                  </button>
+                </div>
+              </div>
+
               {/* Özet Kartları */}
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
                 <div className="rounded-xl border border-emerald-200 bg-emerald-50/50 p-3 dark:border-emerald-900/40 dark:bg-emerald-950/20">
@@ -233,13 +362,14 @@ export default function StocktakePage() {
                       <th className="px-4 py-3">Seri Numarası / QR</th>
                       <th className="px-4 py-3">Sistemdeki Lokasyon</th>
                       <th className="px-4 py-3">Bulunan Lokasyon</th>
-                      <th className="px-4 py-3">Sayım Sonucu</th>
+                      <th className="px-4 py-3">Sayım Sonucu (Düzenlenebilir)</th>
+                      <th className="px-4 py-3 text-right">İşlem</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                     {activeStocktake.items.length === 0 ? (
                       <tr>
-                        <td colSpan={6} className="py-8 text-center text-slate-400">
+                        <td colSpan={7} className="py-8 text-center text-slate-400">
                           Bu depoda beklenen kayıtlı seri numaralı varlık yok. Yukarıdan cihaz okutabilirsiniz.
                         </td>
                       </tr>
@@ -259,13 +389,42 @@ export default function StocktakePage() {
                             <td className="px-4 py-2.5 text-xs">{it.expected_warehouse_name || '—'}</td>
                             <td className="px-4 py-2.5 text-xs">{it.found_warehouse_name || '—'}</td>
                             <td className="px-4 py-2.5">
-                              <span
-                                className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium ${badge.cls}`}
-                              >
-                                {it.result === 'wrong_location' && <AlertTriangle className="h-3 w-3" />}
-                                {it.result === 'serial_mismatch' && <ShieldAlert className="h-3 w-3" />}
-                                {badge.label}
-                              </span>
+                              {activeStocktake.status === 'counting' ? (
+                                <select
+                                  value={it.result}
+                                  onChange={e => updateItemMut.mutate({ itemId: it.id, result: e.target.value })}
+                                  className={`rounded-full px-2.5 py-1 text-xs font-semibold outline-none ${badge.cls}`}
+                                >
+                                  <option value="found">Bulundu (Tam)</option>
+                                  <option value="missing">Eksik (Henüz Okunmadı)</option>
+                                  <option value="wrong_location">Yanlış Lokasyonda</option>
+                                  <option value="serial_mismatch">Seri No Uyuşmazlığı / Fazla</option>
+                                </select>
+                              ) : (
+                                <span
+                                  className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium ${badge.cls}`}
+                                >
+                                  {it.result === 'wrong_location' && <AlertTriangle className="h-3 w-3" />}
+                                  {it.result === 'serial_mismatch' && <ShieldAlert className="h-3 w-3" />}
+                                  {badge.label}
+                                </span>
+                              )}
+                            </td>
+                            <td className="px-4 py-2.5 text-right">
+                              {activeStocktake.status === 'counting' && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (window.confirm('Bu sayım satırını listeden silmek istediğinize emin misiniz?')) {
+                                      deleteItemMut.mutate(it.id)
+                                    }
+                                  }}
+                                  className="inline-flex items-center rounded border border-rose-200 p-1 text-rose-600 hover:bg-rose-50 dark:border-rose-900/50"
+                                  title="Satırı Sil"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </button>
+                              )}
                             </td>
                           </tr>
                         )
@@ -290,7 +449,7 @@ export default function StocktakePage() {
                 <select
                   value={form.warehouse_id}
                   onChange={e => setForm({ ...form, warehouse_id: e.target.value })}
-                  className="w-full rounded-lg border px-3 py-2"
+                  className="w-full rounded-lg border px-3 py-2 dark:border-slate-700 dark:bg-slate-800"
                 >
                   <option value="">Depo seçin...</option>
                   {warehouses.map(w => (
@@ -307,7 +466,7 @@ export default function StocktakePage() {
                   placeholder="Örn: 2026 4. Çeyrek Merkez Depo Fiziksel Sayımı"
                   value={form.note}
                   onChange={e => setForm({ ...form, note: e.target.value })}
-                  className="w-full rounded-lg border px-3 py-2"
+                  className="w-full rounded-lg border px-3 py-2 dark:border-slate-700 dark:bg-slate-800"
                 />
               </div>
             </div>
@@ -320,6 +479,51 @@ export default function StocktakePage() {
                 className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white"
               >
                 Sayımı Başlat
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Sayım Oturumu Düzenleme Modalı */}
+      {editModal && (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-black/50 p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl dark:bg-slate-900">
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="text-lg font-bold">Sayım Oturumunu Düzenle ({editModal.stocktake_no})</h2>
+              <button onClick={() => setEditModal(null)}>
+                <X className="h-5 w-5 text-slate-400" />
+              </button>
+            </div>
+            <div className="space-y-3 text-sm">
+              <div>
+                <label className="mb-1 block text-xs font-medium">Sayım Tarihi</label>
+                <input
+                  type="date"
+                  value={editDate}
+                  onChange={e => setEditDate(e.target.value)}
+                  className="w-full rounded-lg border px-3 py-2 dark:border-slate-700 dark:bg-slate-800"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium">Sayım Notu / Açıklama</label>
+                <textarea
+                  rows={3}
+                  value={editNote}
+                  onChange={e => setEditNote(e.target.value)}
+                  className="w-full rounded-lg border px-3 py-2 dark:border-slate-700 dark:bg-slate-800"
+                />
+              </div>
+            </div>
+            <div className="mt-5 flex justify-end gap-2">
+              <button onClick={() => setEditModal(null)} className="rounded-lg border px-4 py-2 text-sm">
+                İptal
+              </button>
+              <button
+                onClick={() => updateStocktakeMut.mutate()}
+                className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white"
+              >
+                Kaydet
               </button>
             </div>
           </div>

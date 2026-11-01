@@ -2,8 +2,10 @@ import { useState, type ChangeEvent, type FormEvent } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useSearchParams } from 'react-router-dom'
 import {
+  Briefcase,
   Camera,
   Cpu,
+  Edit3,
   Eye,
   FileText,
   Image as ImageIcon,
@@ -13,6 +15,8 @@ import {
   Plus,
   QrCode,
   Search,
+  Send,
+  Sparkles,
   Trash2,
   Upload,
   X,
@@ -61,6 +65,7 @@ export interface ProductItem {
   location_detail: string | null
   internal_notes: string | null
   primary_image_url: string | null
+  active_projects_summary?: string | null
   is_active: boolean
 }
 
@@ -80,6 +85,8 @@ export interface AssetItem {
   warehouse_name: string | null
   shelf_section: string | null
   location_detail: string | null
+  assigned_project_name?: string | null
+  assigned_employee_name?: string | null
   purchase_date: string | null
   purchase_price: string | null
   purchase_currency: string
@@ -109,6 +116,14 @@ interface DocumentRecord {
   size_bytes: number
 }
 
+interface ProjectSummary {
+  id: string
+  code: string
+  name: string
+  customer: string | null
+  status: string
+}
+
 const STATUS_LABELS: Record<string, { label: string; cls: string }> = {
   in_warehouse: { label: 'Depoda', cls: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300' },
   active: { label: 'Aktif', cls: 'bg-blue-50 text-blue-700 dark:bg-blue-500/15 dark:text-blue-300' },
@@ -135,17 +150,39 @@ export default function InventoryPage() {
   const [trackFilter, setTrackFilter] = useState('')
 
   const [openCreate, setOpenCreate] = useState(false)
+  const [editingProduct, setEditingProduct] = useState<ProductItem | null>(null)
   const [selectedProduct, setSelectedProduct] = useState<ProductItem | null>(null)
   const [bulkSerialText, setBulkSerialText] = useState('')
   const [qrModalAsset, setQrModalAsset] = useState<AssetItem | null>(null)
 
-  // Yeni Ürün Form State
+  // Cihaz Düzenleme Modalı
+  const [editingAsset, setEditingAsset] = useState<AssetItem | null>(null)
+  const [aSerial, setASerial] = useState('')
+  const [aWarehouse, setAWarehouse] = useState('')
+  const [aShelf, setAShelf] = useState('')
+  const [aStatus, setAStatus] = useState('in_warehouse')
+  const [aPurchasePrice, setAPurchasePrice] = useState('')
+  const [aMarketVal, setAMarketVal] = useState('')
+  const [aMarketCurr, setAMarketCurr] = useState<'TRY' | 'EUR' | 'USD'>('TRY')
+  const [aNotes, setANotes] = useState('')
+
+  // Projeye Kaydır (Hızlı Gönderim) Modalı
+  const [shiftModal, setShiftModal] = useState<{
+    product?: ProductItem
+    asset?: AssetItem
+  } | null>(null)
+  const [shiftProjectId, setShiftProjectId] = useState('')
+  const [shiftAssetId, setShiftAssetId] = useState('')
+  const [shiftQty, setShiftQty] = useState('1')
+  const [shiftNote, setShiftNote] = useState('')
+
+  // Ürün Oluşturma / Düzenleme Form State
   const [fName, setFName] = useState('')
   const [fCode, setFCode] = useState('')
   const [fCatId, setFCatId] = useState('')
   const [fSubCatId, setFSubCatId] = useState('')
-  const [fBrandId, setFBrandId] = useState('')
-  const [fModelId, setFModelId] = useState('')
+  const [fBrandName, setFBrandName] = useState('')
+  const [fModelName, setFModelName] = useState('')
   const [fTracking, setFTracking] = useState<'serial' | 'quantity'>('serial')
   const [fUnit, setFUnit] = useState('Adet')
   const [fBarcode, setFBarcode] = useState('')
@@ -188,22 +225,32 @@ export default function InventoryPage() {
     queryKey: ['suppliers'],
     queryFn: () => api<SupplierItem[]>('/suppliers'),
   })
+  const { data: projects = [] } = useQuery({
+    queryKey: ['projects'],
+    queryFn: () => api<ProjectSummary[]>('/projects'),
+  })
 
   const prodParams = new URLSearchParams()
   if (q) prodParams.set('q', q)
   if (catFilter) prodParams.set('category_id', catFilter)
   if (brandFilter) prodParams.set('brand_id', brandFilter)
   if (trackFilter) prodParams.set('tracking_type', trackFilter)
-  if (statusFilter) prodParams.set('status', statusFilter)
+  if (statusFilter && statusFilter !== 'has_project') prodParams.set('status', statusFilter)
 
-  const { data: products = [], isLoading: pLoading } = useQuery({
+  const { data: rawProducts = [], isLoading: pLoading } = useQuery({
     queryKey: ['products', prodParams.toString()],
     queryFn: () => api<ProductItem[]>(`/products?${prodParams.toString()}`),
   })
 
+  const products =
+    statusFilter === 'has_project'
+      ? rawProducts.filter(p => p.status === 'in_project' || !!p.active_projects_summary)
+      : rawProducts
+
   const assetParams = new URLSearchParams()
   if (q) assetParams.set('q', q)
-  if (statusFilter) assetParams.set('status', statusFilter)
+  if (statusFilter && statusFilter !== 'has_project') assetParams.set('status', statusFilter)
+  if (statusFilter === 'has_project') assetParams.set('status', 'in_project')
 
   const { data: assets = [], isLoading: aLoading } = useQuery({
     queryKey: ['assets', assetParams.toString()],
@@ -227,14 +274,34 @@ export default function InventoryPage() {
     enabled: !!selectedProduct,
   })
 
+  // Projeye kaydırma için seçili ürünün depodaki seri cihazları
+  const { data: shiftProdAssets = [] } = useQuery({
+    queryKey: ['shift-product-assets', shiftModal?.product?.id],
+    queryFn: () => api<AssetItem[]>(`/assets?product_id=${shiftModal!.product!.id}`),
+    enabled: !!shiftModal?.product && shiftModal.product.tracking_type === 'serial',
+  })
+
+  const refreshAll = () => {
+    qc.invalidateQueries({ queryKey: ['products'] })
+    qc.invalidateQueries({ queryKey: ['assets'] })
+    qc.invalidateQueries({ queryKey: ['brands'] })
+    qc.invalidateQueries({ queryKey: ['models'] })
+    qc.invalidateQueries({ queryKey: ['projects'] })
+    qc.invalidateQueries({ queryKey: ['inventory-summary'] })
+    if (selectedProduct) {
+      qc.invalidateQueries({ queryKey: ['product-assets', selectedProduct.id] })
+    }
+  }
+
   const openNewModal = () => {
     const firstCat = categories[0]
+    setEditingProduct(null)
     setFName('')
     setFCode('')
     setFCatId(firstCat?.id || '')
     setFSubCatId('')
-    setFBrandId('')
-    setFModelId('')
+    setFBrandName('')
+    setFModelName('')
     setFTracking(firstCat?.tracking_type || 'serial')
     setFUnit(firstCat?.tracking_type === 'quantity' ? 'Metre' : 'Adet')
     setFBarcode('')
@@ -261,63 +328,289 @@ export default function InventoryPage() {
     setOpenCreate(true)
   }
 
+  const openEditModal = (p: ProductItem) => {
+    setEditingProduct(p)
+    setFName(p.name)
+    setFCode(p.inventory_code)
+    setFCatId(p.category_id)
+    setFSubCatId(p.subcategory_id || '')
+    setFBrandName(p.brand_name || '')
+    setFModelName(p.model_name || '')
+    setFTracking(p.tracking_type)
+    setFUnit(p.unit || 'Adet')
+    setFBarcode(p.barcode || '')
+    setFQty(String(p.quantity ?? '0'))
+    setFMinStock(String(p.min_stock ?? '0'))
+    setFPurchaseDate(p.purchase_date || '')
+    setFPurchasePrice(p.purchase_price ? String(p.purchase_price) : '')
+    setFPurchaseCurr(p.purchase_currency || 'TRY')
+    setFVat(String(p.vat_rate ?? '20'))
+    setFSupplierId(p.supplier_id || '')
+    setFInvoice(p.invoice_no || '')
+    setFWarStart(p.warranty_start || '')
+    setFWarEnd(p.warranty_end || '')
+    setFMarketVal(p.current_market_value ? String(p.current_market_value) : '')
+    setFMarketCurr(p.market_value_currency || 'TRY')
+    setFStatus(p.status || 'in_warehouse')
+    setFWarehouse(p.warehouse_name || 'Merkez Depo')
+    setFShelf(p.shelf_section || '')
+    setFLocation(p.location_detail || '')
+    setFDesc(p.description || '')
+    setFNotes(p.internal_notes || '')
+    setFAttrs(p.attributes && p.attributes.length > 0 ? p.attributes : [{ key: '', value: '' }])
+    setFSerialsText('')
+    setOpenCreate(true)
+  }
+
+  const fetchSuggestedMarketValue = async () => {
+    if (editingProduct) {
+      try {
+        const res = await api<{
+          found_reliable_source: boolean
+          suggested_value: number | null
+          currency: 'TRY' | 'EUR' | 'USD' | null
+          message: string
+        }>(`/valuations/research?product_id=${editingProduct.id}`)
+        if (res.found_reliable_source && res.suggested_value !== null) {
+          setFMarketVal(String(res.suggested_value))
+          if (res.currency) setFMarketCurr(res.currency)
+          toast.success(res.message)
+          return
+        }
+      } catch {
+        // Fallback below
+      }
+    }
+
+    // Aynı marka/model başka bir üründe piyasa değeri varsa veya alış fiyatından referans
+    const matchProd = rawProducts.find(
+      x =>
+        (fModelName && x.model_name?.toLowerCase() === fModelName.trim().toLowerCase() && x.current_market_value) ||
+        (fBrandName && x.brand_name?.toLowerCase() === fBrandName.trim().toLowerCase() && x.current_market_value),
+    )
+    if (matchProd && matchProd.current_market_value) {
+      setFMarketVal(String(matchProd.current_market_value))
+      setFMarketCurr(matchProd.market_value_currency)
+      toast.success(`Aynı marka/model kaydından (${matchProd.name}) güncel piyasa değeri çekildi.`)
+      return
+    }
+
+    if (fPurchasePrice && Number(fPurchasePrice) > 0) {
+      const est = (Number(fPurchasePrice) * 0.75).toFixed(2)
+      setFMarketVal(est)
+      setFMarketCurr(fPurchaseCurr)
+      toast.info(`Alış fiyatı üzerinden %75 ikinci el başlangıç referans değeri (${est} ${fPurchaseCurr}) hesaplandı.`)
+      return
+    }
+
+    toast.warning('Önce alış fiyatı girin veya doğrudan ikinci el piyasa değerini yazın.')
+  }
+
   const submitProduct = async (e: FormEvent) => {
     e.preventDefault()
     setSaving(true)
     try {
-      const serials =
-        fTracking === 'serial'
-          ? fSerialsText
-              .split(/[\n,;]+/)
-              .map(s => s.trim())
-              .filter(Boolean)
-          : []
-
       const cleanAttrs = fAttrs.filter(a => a.key.trim() && a.value.trim())
 
-      await api('/products', {
-        method: 'POST',
-        body: JSON.stringify({
-          inventory_code: fCode.trim() || null,
-          name: fName.trim(),
-          category_id: fCatId,
-          subcategory_id: fSubCatId || null,
-          brand_id: fBrandId || null,
-          model_id: fModelId || null,
-          tracking_type: fTracking,
-          unit: fUnit,
-          barcode: fBarcode || null,
-          description: fDesc || null,
-          attributes: cleanAttrs,
-          min_stock: fMinStock || '0',
-          quantity: fTracking === 'quantity' ? fQty || '0' : String(serials.length),
-          purchase_date: fPurchaseDate || null,
-          purchase_price: fPurchasePrice ? fPurchasePrice : null,
-          purchase_currency: fPurchaseCurr,
-          vat_rate: fVat || '20',
-          supplier_id: fSupplierId || null,
-          invoice_no: fInvoice || null,
-          warranty_start: fWarStart || null,
-          warranty_end: fWarEnd || null,
-          current_market_value: fMarketVal ? fMarketVal : null,
-          market_value_currency: fMarketCurr,
-          status: fStatus,
-          warehouse_name: fWarehouse || null,
-          shelf_section: fShelf || null,
-          location_detail: fLocation || null,
-          internal_notes: fNotes || null,
-          initial_serial_numbers: serials,
-        }),
-      })
-      toast.success('Ürün ve varlık kayıtları oluşturuldu.')
-      qc.invalidateQueries({ queryKey: ['products'] })
-      qc.invalidateQueries({ queryKey: ['assets'] })
-      qc.invalidateQueries({ queryKey: ['inventory-summary'] })
+      if (editingProduct) {
+        const updated = await api<ProductItem>(`/products/${editingProduct.id}`, {
+          method: 'PATCH',
+          body: JSON.stringify({
+            name: fName.trim(),
+            category_id: fCatId,
+            subcategory_id: fSubCatId || null,
+            brand_name: fBrandName.trim(),
+            model_name: fModelName.trim(),
+            unit: fUnit,
+            barcode: fBarcode || null,
+            description: fDesc || null,
+            attributes: cleanAttrs,
+            min_stock: fMinStock || '0',
+            quantity: fTracking === 'quantity' ? fQty || '0' : undefined,
+            purchase_date: fPurchaseDate || null,
+            purchase_price: fPurchasePrice ? fPurchasePrice : null,
+            purchase_currency: fPurchaseCurr,
+            vat_rate: fVat || '20',
+            supplier_id: fSupplierId || null,
+            invoice_no: fInvoice || null,
+            warranty_start: fWarStart || null,
+            warranty_end: fWarEnd || null,
+            current_market_value: fMarketVal ? fMarketVal : null,
+            market_value_currency: fMarketCurr,
+            status: fStatus,
+            warehouse_name: fWarehouse || null,
+            shelf_section: fShelf || null,
+            location_detail: fLocation || null,
+            internal_notes: fNotes || null,
+          }),
+        })
+        toast.success('Ürün kartı ve bağlı varlık bilgileri güncellendi.')
+        if (selectedProduct && selectedProduct.id === updated.id) {
+          setSelectedProduct(updated)
+        }
+      } else {
+        const serials =
+          fTracking === 'serial'
+            ? fSerialsText
+                .split(/[\n,;]+/)
+                .map(s => s.trim())
+                .filter(Boolean)
+            : []
+
+        await api('/products', {
+          method: 'POST',
+          body: JSON.stringify({
+            inventory_code: fCode.trim() || null,
+            name: fName.trim(),
+            category_id: fCatId,
+            subcategory_id: fSubCatId || null,
+            brand_name: fBrandName.trim() || null,
+            model_name: fModelName.trim() || null,
+            tracking_type: fTracking,
+            unit: fUnit,
+            barcode: fBarcode || null,
+            description: fDesc || null,
+            attributes: cleanAttrs,
+            min_stock: fMinStock || '0',
+            quantity: fTracking === 'quantity' ? fQty || '0' : String(serials.length),
+            purchase_date: fPurchaseDate || null,
+            purchase_price: fPurchasePrice ? fPurchasePrice : null,
+            purchase_currency: fPurchaseCurr,
+            vat_rate: fVat || '20',
+            supplier_id: fSupplierId || null,
+            invoice_no: fInvoice || null,
+            warranty_start: fWarStart || null,
+            warranty_end: fWarEnd || null,
+            current_market_value: fMarketVal ? fMarketVal : null,
+            market_value_currency: fMarketCurr,
+            status: fStatus,
+            warehouse_name: fWarehouse || null,
+            shelf_section: fShelf || null,
+            location_detail: fLocation || null,
+            internal_notes: fNotes || null,
+            initial_serial_numbers: serials,
+          }),
+        })
+        toast.success('Ürün ve varlık kayıtları oluşturuldu.')
+      }
+
+      refreshAll()
       setOpenCreate(false)
+      setEditingProduct(null)
     } catch (err) {
       toast.error((err as Error).message)
     } finally {
       setSaving(false)
+    }
+  }
+
+  const handleDeleteProduct = async (p: ProductItem) => {
+    if (!window.confirm(`"${p.name}" (${p.inventory_code}) ürün kartını ve bağlı cihazlarını silmek istediğinize emin misiniz?`)) {
+      return
+    }
+    try {
+      await api(`/products/${p.id}`, { method: 'DELETE' })
+      toast.success('Ürün kaydı silindi.')
+      if (selectedProduct?.id === p.id) setSelectedProduct(null)
+      refreshAll()
+    } catch (err) {
+      toast.error((err as Error).message)
+    }
+  }
+
+  const openAssetEditModal = (a: AssetItem) => {
+    setEditingAsset(a)
+    setASerial(a.serial_number)
+    setAWarehouse(a.warehouse_name || 'Merkez Depo')
+    setAShelf(a.shelf_section || '')
+    setAStatus(a.status)
+    setAPurchasePrice(a.purchase_price ? String(a.purchase_price) : '')
+    setAMarketVal(a.current_market_value ? String(a.current_market_value) : '')
+    setAMarketCurr((a.market_value_currency as 'TRY' | 'EUR' | 'USD') || 'TRY')
+    setANotes(a.notes || '')
+  }
+
+  const submitAssetEdit = async (e: FormEvent) => {
+    e.preventDefault()
+    if (!editingAsset) return
+    try {
+      await api(`/assets/${editingAsset.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          serial_number: aSerial.trim(),
+          warehouse_name: aWarehouse || null,
+          shelf_section: aShelf || null,
+          status: aStatus,
+          purchase_price: aPurchasePrice ? aPurchasePrice : null,
+          current_market_value: aMarketVal ? aMarketVal : null,
+          market_value_currency: aMarketCurr,
+          notes: aNotes || null,
+        }),
+      })
+      toast.success(`${aSerial} cihaz bilgileri güncellendi.`)
+      setEditingAsset(null)
+      refreshAll()
+    } catch (err) {
+      toast.error((err as Error).message)
+    }
+  }
+
+  const handleDeleteAsset = async (a: AssetItem) => {
+    if (!window.confirm(`${a.serial_number} (${a.inventory_code}) seri numaralı cihazı silmek istediğinize emin misiniz?`)) {
+      return
+    }
+    try {
+      await api(`/assets/${a.id}`, { method: 'DELETE' })
+      toast.success('Seri numaralı cihaz silindi.')
+      refreshAll()
+    } catch (err) {
+      toast.error((err as Error).message)
+    }
+  }
+
+  const openShiftToProjectModal = (opts: { product?: ProductItem; asset?: AssetItem }) => {
+    setShiftModal(opts)
+    setShiftProjectId(projects[0]?.id || '')
+    setShiftAssetId(opts.asset?.id || '')
+    setShiftQty('1')
+    setShiftNote('')
+  }
+
+  const submitShiftToProject = async (e: FormEvent) => {
+    e.preventDefault()
+    if (!shiftModal || !shiftProjectId) {
+      toast.error('Lütfen hedef projeyi seçin.')
+      return
+    }
+    try {
+      const prodId = shiftModal.asset ? shiftModal.asset.product_id : shiftModal.product!.id
+      const isSerial = shiftModal.asset || shiftModal.product?.tracking_type === 'serial'
+      const chosenAssetId = shiftModal.asset ? shiftModal.asset.id : shiftAssetId
+
+      if (isSerial && !chosenAssetId) {
+        toast.error('Lütfen projeye gönderilecek seri numaralı cihazı seçin.')
+        return
+      }
+
+      await api(`/projects/${shiftProjectId}/send`, {
+        method: 'POST',
+        body: JSON.stringify({
+          note: shiftNote || 'Envanter ekranından projeye kaydırıldı',
+          items: [
+            {
+              product_id: prodId,
+              asset_id: isSerial ? chosenAssetId : null,
+              quantity: isSerial ? '1' : shiftQty || '1',
+              note: shiftNote || null,
+            },
+          ],
+        }),
+      })
+      toast.success('Malzeme seçilen projeye başarıyla kaydırıldı.')
+      setShiftModal(null)
+      refreshAll()
+    } catch (err) {
+      toast.error((err as Error).message)
     }
   }
 
@@ -380,10 +673,7 @@ export default function InventoryPage() {
       })
       toast.success(`${serials.length} adet seri numaralı cihaz eklendi.`)
       setBulkSerialText('')
-      qc.invalidateQueries({ queryKey: ['product-assets', selectedProduct.id] })
-      qc.invalidateQueries({ queryKey: ['products'] })
-      qc.invalidateQueries({ queryKey: ['assets'] })
-      qc.invalidateQueries({ queryKey: ['inventory-summary'] })
+      refreshAll()
     } catch (err) {
       toast.error((err as Error).message)
     }
@@ -396,9 +686,7 @@ export default function InventoryPage() {
         body: JSON.stringify({ status: newStatus }),
       })
       toast.success(`${asset.serial_number} durumu güncellendi.`)
-      qc.invalidateQueries({ queryKey: ['assets'] })
-      if (selectedProduct) qc.invalidateQueries({ queryKey: ['product-assets', selectedProduct.id] })
-      qc.invalidateQueries({ queryKey: ['inventory-summary'] })
+      refreshAll()
     } catch (err) {
       toast.error((err as Error).message)
     }
@@ -407,7 +695,8 @@ export default function InventoryPage() {
   const inputCls =
     'w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand-500 dark:border-slate-700 dark:bg-slate-800'
 
-  const filteredModels = fBrandId ? models.filter(m => m.brand_id === fBrandId) : models
+  const matchedBrand = brands.find(b => b.name.toLowerCase() === fBrandName.trim().toLowerCase())
+  const suggestedModels = matchedBrand ? models.filter(m => m.brand_id === matchedBrand.id) : models
 
   return (
     <div className="space-y-5">
@@ -416,7 +705,7 @@ export default function InventoryPage() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Envanter ve Varlık Yönetimi</h1>
           <p className="text-sm text-slate-500">
-            Ürün katalog kartları, adet bazlı sarf malzemeleri ve seri numarası bazlı tekil cihazlar
+            Ürün katalog kartları, adet bazlı sarf malzemeleri, seri numaralı cihazlar ve projedeki ekipman takibi
           </p>
         </div>
         {can('product.create') && (
@@ -507,6 +796,7 @@ export default function InventoryPage() {
           className={inputCls}
         >
           <option value="">Tüm Durumlar</option>
+          <option value="has_project">Projeye Kaydırılanlar (Aktif Projede)</option>
           {Object.entries(STATUS_LABELS).map(([k, v]) => (
             <option key={k} value={k}>
               {v.label}
@@ -540,9 +830,9 @@ export default function InventoryPage() {
                     <th className="p-3.5">Takip / Miktar</th>
                     <th className="p-3.5">Birim Alış</th>
                     <th className="p-3.5">Piyasa Değeri</th>
-                    <th className="p-3.5">Konum</th>
+                    <th className="p-3.5">Konum & Proje</th>
                     <th className="p-3.5">Durum</th>
-                    <th className="p-3.5 text-right">Detay</th>
+                    <th className="p-3.5 text-right">İşlemler</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -598,24 +888,58 @@ export default function InventoryPage() {
                             ? `${Number(p.current_market_value).toLocaleString('tr-TR')} ${SYM[p.market_value_currency] || p.market_value_currency}`
                             : '—'}
                         </td>
-                        <td className="p-3.5 text-xs text-slate-500">
-                          {[p.warehouse_name, p.shelf_section].filter(Boolean).join(' / ') || '—'}
+                        <td className="p-3.5 text-xs">
+                          <div className="text-slate-600 dark:text-slate-300">
+                            {[p.warehouse_name, p.shelf_section].filter(Boolean).join(' / ') || '—'}
+                          </div>
+                          {p.active_projects_summary && (
+                            <div className="mt-1 inline-flex items-center gap-1 rounded-md bg-indigo-50 px-2 py-0.5 text-[11px] font-semibold text-indigo-700 dark:bg-indigo-500/20 dark:text-indigo-300">
+                              <Briefcase className="h-3 w-3" /> Projede: {p.active_projects_summary}
+                            </div>
+                          )}
                         </td>
                         <td className="p-3.5">
                           <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${st.cls}`}>
                             {st.label}
                           </span>
                         </td>
-                        <td className="p-3.5 text-right">
-                          <button
-                            onClick={e => {
-                              e.stopPropagation()
-                              setSelectedProduct(p)
-                            }}
-                            className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1 text-xs font-medium hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800"
-                          >
-                            <Eye className="h-3.5 w-3.5" /> İncele
-                          </button>
+                        <td className="p-3.5 text-right" onClick={e => e.stopPropagation()}>
+                          <div className="inline-flex items-center gap-1">
+                            {can('project.manage') && (
+                              <button
+                                onClick={() => openShiftToProjectModal({ product: p })}
+                                title="Projeye Kaydır / Gönder"
+                                className="inline-flex items-center gap-1 rounded-lg border border-indigo-200 bg-indigo-50/60 px-2 py-1 text-xs font-semibold text-indigo-700 hover:bg-indigo-100 dark:border-indigo-800 dark:bg-indigo-950/50 dark:text-indigo-300"
+                              >
+                                <Send className="h-3 w-3" /> Projeye
+                              </button>
+                            )}
+                            {can('product.update') && (
+                              <button
+                                onClick={() => openEditModal(p)}
+                                title="Düzenle"
+                                className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2 py-1 text-xs font-medium hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800"
+                              >
+                                <Edit3 className="h-3.5 w-3.5" /> Düzenle
+                              </button>
+                            )}
+                            <button
+                              onClick={() => setSelectedProduct(p)}
+                              title="Detay İncele"
+                              className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2 py-1 text-xs font-medium hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800"
+                            >
+                              <Eye className="h-3.5 w-3.5" />
+                            </button>
+                            {can('product.delete') && (
+                              <button
+                                onClick={() => handleDeleteProduct(p)}
+                                title="Sil"
+                                className="inline-flex items-center rounded-lg border border-rose-200 p-1 text-xs text-rose-600 hover:bg-rose-50 dark:border-rose-900/50 dark:hover:bg-rose-950/40"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     )
@@ -647,11 +971,11 @@ export default function InventoryPage() {
                     <th className="p-3.5">Envanter Kodu</th>
                     <th className="p-3.5">Seri Numarası</th>
                     <th className="p-3.5">Ürün / Marka-Model</th>
-                    <th className="p-3.5">Depo / Raf</th>
+                    <th className="p-3.5">Depo / Proje / Zimmet</th>
                     <th className="p-3.5">Alış Maliyeti</th>
                     <th className="p-3.5">Piyasa Değeri</th>
                     <th className="p-3.5">Durum</th>
-                    <th className="p-3.5 text-right">QR Etiket</th>
+                    <th className="p-3.5 text-right">İşlemler</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -669,8 +993,20 @@ export default function InventoryPage() {
                             {[a.brand_name, a.model_name].filter(Boolean).join(' • ') || a.category_name}
                           </div>
                         </td>
-                        <td className="p-3.5 text-xs text-slate-500">
-                          {[a.warehouse_name, a.shelf_section].filter(Boolean).join(' / ') || '—'}
+                        <td className="p-3.5 text-xs">
+                          <div className="text-slate-600 dark:text-slate-300">
+                            {[a.warehouse_name, a.shelf_section].filter(Boolean).join(' / ') || '—'}
+                          </div>
+                          {a.assigned_project_name && (
+                            <div className="mt-1 inline-flex items-center gap-1 rounded-md bg-indigo-50 px-2 py-0.5 text-[11px] font-semibold text-indigo-700 dark:bg-indigo-500/20 dark:text-indigo-300">
+                              <Briefcase className="h-3 w-3" /> Proje: {a.assigned_project_name}
+                            </div>
+                          )}
+                          {a.assigned_employee_name && (
+                            <div className="mt-1 inline-flex items-center gap-1 rounded-md bg-purple-50 px-2 py-0.5 text-[11px] font-semibold text-purple-700 dark:bg-purple-500/20 dark:text-purple-300">
+                              Zimmet: {a.assigned_employee_name}
+                            </div>
+                          )}
                         </td>
                         <td className="p-3.5">
                           {a.purchase_price
@@ -702,12 +1038,42 @@ export default function InventoryPage() {
                           )}
                         </td>
                         <td className="p-3.5 text-right">
-                          <button
-                            onClick={() => setQrModalAsset(a)}
-                            className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1 text-xs font-medium hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800"
-                          >
-                            <QrCode className="h-3.5 w-3.5" /> QR Kod
-                          </button>
+                          <div className="inline-flex items-center gap-1">
+                            {can('project.manage') && a.status !== 'in_project' && (
+                              <button
+                                onClick={() => openShiftToProjectModal({ asset: a })}
+                                title="Projeye Kaydır"
+                                className="inline-flex items-center gap-1 rounded-lg border border-indigo-200 bg-indigo-50/60 px-2 py-1 text-xs font-semibold text-indigo-700 hover:bg-indigo-100 dark:border-indigo-800 dark:bg-indigo-950/50 dark:text-indigo-300"
+                              >
+                                <Send className="h-3 w-3" /> Projeye
+                              </button>
+                            )}
+                            {can('product.update') && (
+                              <button
+                                onClick={() => openAssetEditModal(a)}
+                                title="Cihazı Düzenle"
+                                className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2 py-1 text-xs font-medium hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800"
+                              >
+                                <Edit3 className="h-3.5 w-3.5" /> Düzenle
+                              </button>
+                            )}
+                            <button
+                              onClick={() => setQrModalAsset(a)}
+                              title="QR Kod"
+                              className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2 py-1 text-xs font-medium hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800"
+                            >
+                              <QrCode className="h-3.5 w-3.5" /> QR
+                            </button>
+                            {can('product.delete') && (
+                              <button
+                                onClick={() => handleDeleteAsset(a)}
+                                title="Cihazı Sil"
+                                className="inline-flex items-center rounded-lg border border-rose-200 p-1 text-xs text-rose-600 hover:bg-rose-50 dark:border-rose-900/50 dark:hover:bg-rose-950/40"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     )
@@ -719,24 +1085,32 @@ export default function InventoryPage() {
         </div>
       )}
 
-      {/* YENİ ÜRÜN EKLEME MODALI */}
+      {/* YENİ ÜRÜN EKLEME / DÜZENLEME MODALI */}
       {openCreate && (
         <div className="fixed inset-0 z-50 overflow-y-auto bg-black/50 p-4">
           <div className="mx-auto my-6 max-w-4xl rounded-2xl bg-white p-6 shadow-2xl dark:bg-slate-900">
             <div className="flex items-center justify-between border-b border-slate-200 pb-4 dark:border-slate-800">
               <div>
-                <h2 className="text-lg font-bold">Yeni Ürün / Envanter Kartı Oluştur</h2>
+                <h2 className="text-lg font-bold">
+                  {editingProduct ? `Ürün Kartını Düzenle (${editingProduct.inventory_code})` : 'Yeni Ürün / Envanter Kartı Oluştur'}
+                </h2>
                 <p className="text-xs text-slate-500">
-                  Ürün katalog bilgilerini, alış maliyetini, piyasa değerini ve seri numaralarını tanımlayın
+                  Marka ve modeli doğrudan yazabilir, alış maliyetini ve güncel piyasa değerini tanımlayabilirsiniz
                 </p>
               </div>
-              <button type="button" onClick={() => setOpenCreate(false)}>
+              <button
+                type="button"
+                onClick={() => {
+                  setOpenCreate(false)
+                  setEditingProduct(null)
+                }}
+              >
                 <X className="h-5 w-5 text-slate-400" />
               </button>
             </div>
 
             <form onSubmit={submitProduct} className="mt-5 space-y-6">
-              {/* Bölüm 1: Temel Kimlik ve Kategori */}
+              {/* Bölüm 1: Temel Kimlik, Kategori ve Doğrudan Yazılabilir Marka/Model */}
               <div className="grid gap-4 sm:grid-cols-3">
                 <label className="block text-sm font-medium sm:col-span-2">
                   Ürün Adı *
@@ -749,11 +1123,12 @@ export default function InventoryPage() {
                   />
                 </label>
                 <label className="block text-sm font-medium">
-                  Envanter Kodu (Boşsa otomatik)
+                  Envanter Kodu {editingProduct ? '' : '(Boşsa otomatik)'}
                   <input
                     value={fCode}
+                    disabled={!!editingProduct}
                     onChange={e => setFCode(e.target.value.toUpperCase())}
-                    className={inputCls + ' mt-1 font-mono uppercase'}
+                    className={inputCls + ' mt-1 font-mono uppercase disabled:opacity-60'}
                     placeholder="Otomatik: KUP-PRJ-0001"
                   />
                 </label>
@@ -767,7 +1142,7 @@ export default function InventoryPage() {
                       const cid = e.target.value
                       setFCatId(cid)
                       const c = categories.find(x => x.id === cid)
-                      if (c) {
+                      if (c && !editingProduct) {
                         setFTracking(c.tracking_type)
                         setFUnit(c.tracking_type === 'quantity' ? 'Metre' : 'Adet')
                       }
@@ -783,38 +1158,35 @@ export default function InventoryPage() {
                 </label>
 
                 <label className="block text-sm font-medium">
-                  Marka
-                  <select
-                    value={fBrandId}
-                    onChange={e => {
-                      setFBrandId(e.target.value)
-                      setFModelId('')
-                    }}
+                  Marka (Doğrudan yazabilir veya seçebilirsiniz)
+                  <input
+                    list="brands-datalist"
+                    value={fBrandName}
+                    onChange={e => setFBrandName(e.target.value)}
                     className={inputCls + ' mt-1'}
-                  >
-                    <option value="">— Marka Seçin —</option>
+                    placeholder="Örn: Panasonic, Sony, Apple..."
+                  />
+                  <datalist id="brands-datalist">
                     {brands.map(b => (
-                      <option key={b.id} value={b.id}>
-                        {b.name}
-                      </option>
+                      <option key={b.id} value={b.name} />
                     ))}
-                  </select>
+                  </datalist>
                 </label>
 
                 <label className="block text-sm font-medium">
-                  Model
-                  <select
-                    value={fModelId}
-                    onChange={e => setFModelId(e.target.value)}
+                  Model (Doğrudan yazabilir veya seçebilirsiniz)
+                  <input
+                    list="models-datalist"
+                    value={fModelName}
+                    onChange={e => setFModelName(e.target.value)}
                     className={inputCls + ' mt-1'}
-                  >
-                    <option value="">— Model Seçin —</option>
-                    {filteredModels.map(m => (
-                      <option key={m.id} value={m.id}>
-                        {m.brand_name ? `${m.brand_name} - ${m.name}` : m.name}
-                      </option>
+                    placeholder="Örn: PT-RZ690B, Mac Studio M2..."
+                  />
+                  <datalist id="models-datalist">
+                    {suggestedModels.map(m => (
+                      <option key={m.id} value={m.name} />
                     ))}
-                  </select>
+                  </datalist>
                 </label>
               </div>
 
@@ -825,8 +1197,9 @@ export default function InventoryPage() {
                     Takip Modeli *
                     <select
                       value={fTracking}
+                      disabled={!!editingProduct}
                       onChange={e => setFTracking(e.target.value as 'serial' | 'quantity')}
-                      className={inputCls + ' mt-1'}
+                      className={inputCls + ' mt-1 disabled:opacity-60'}
                     >
                       <option value="serial">Seri Numarası Bazlı Tekil Cihaz Takibi</option>
                       <option value="quantity">Adet / Metre / Miktar Bazlı Stok Takibi</option>
@@ -858,7 +1231,7 @@ export default function InventoryPage() {
                 {fTracking === 'quantity' ? (
                   <div className="mt-4 grid gap-4 sm:grid-cols-2">
                     <label className="block text-sm font-medium">
-                      Başlangıç Miktarı ({fUnit}) *
+                      Mevcut Miktar ({fUnit}) *
                       <input
                         type="number"
                         step="0.01"
@@ -881,7 +1254,7 @@ export default function InventoryPage() {
                       />
                     </label>
                   </div>
-                ) : (
+                ) : !editingProduct ? (
                   <label className="mt-4 block text-sm font-medium">
                     Cihaz Seri Numaraları (Her satıra veya virgülle ayırarak birden fazla seri no girebilirsiniz)
                     <textarea
@@ -892,6 +1265,10 @@ export default function InventoryPage() {
                       placeholder={'SN001\nSN002\nSN003'}
                     />
                   </label>
+                ) : (
+                  <p className="mt-3 text-xs text-slate-500">
+                    Not: Bu ürüne ait seri numaralı cihazları ürün detay çekmecesinden veya "Seri Numaralı Cihazlar" sekmesinden ekleyip düzenleyebilirsiniz.
+                  </p>
                 )}
               </div>
 
@@ -943,30 +1320,39 @@ export default function InventoryPage() {
                   />
                 </label>
 
-                <label className="block text-sm font-medium">
-                  Güncel 2. El Piyasa Değeri
-                  <input
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    value={fMarketVal}
-                    onChange={e => setFMarketVal(e.target.value)}
-                    className={inputCls + ' mt-1'}
-                    placeholder="0.00"
-                  />
-                </label>
-                <label className="block text-sm font-medium">
-                  Piyasa Değeri Para Birimi
-                  <select
-                    value={fMarketCurr}
-                    onChange={e => setFMarketCurr(e.target.value as 'TRY' | 'EUR' | 'USD')}
-                    className={inputCls + ' mt-1'}
-                  >
-                    <option value="TRY">TL (₺)</option>
-                    <option value="EUR">EUR (€)</option>
-                    <option value="USD">USD ($)</option>
-                  </select>
-                </label>
+                <div className="sm:col-span-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium">Güncel 2. El Piyasa Değeri</span>
+                    <button
+                      type="button"
+                      onClick={fetchSuggestedMarketValue}
+                      className="inline-flex items-center gap-1 text-xs font-semibold text-brand-600 hover:underline dark:text-indigo-400"
+                    >
+                      <Sparkles className="h-3.5 w-3.5" /> Referans / Piyasa Değeri Çek
+                    </button>
+                  </div>
+                  <div className="mt-1 flex gap-2">
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={fMarketVal}
+                      onChange={e => setFMarketVal(e.target.value)}
+                      className={inputCls}
+                      placeholder="0.00"
+                    />
+                    <select
+                      value={fMarketCurr}
+                      onChange={e => setFMarketCurr(e.target.value as 'TRY' | 'EUR' | 'USD')}
+                      className="w-28 rounded-lg border border-slate-300 bg-white px-2.5 py-2 text-sm dark:border-slate-700 dark:bg-slate-800"
+                    >
+                      <option value="TRY">TL (₺)</option>
+                      <option value="EUR">EUR (€)</option>
+                      <option value="USD">USD ($)</option>
+                    </select>
+                  </div>
+                </div>
+
                 <label className="block text-sm font-medium">
                   Tedarikçi Firma
                   <select
@@ -1101,7 +1487,10 @@ export default function InventoryPage() {
               <div className="flex justify-end gap-2 border-t border-slate-200 pt-4 dark:border-slate-800">
                 <button
                   type="button"
-                  onClick={() => setOpenCreate(false)}
+                  onClick={() => {
+                    setOpenCreate(false)
+                    setEditingProduct(null)
+                  }}
                   className="rounded-lg border border-slate-300 px-4 py-2 text-sm dark:border-slate-700"
                 >
                   İptal
@@ -1110,7 +1499,206 @@ export default function InventoryPage() {
                   disabled={saving}
                   className="flex items-center gap-2 rounded-lg bg-brand-600 px-5 py-2 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-60"
                 >
-                  {saving && <Loader2 className="h-4 w-4 animate-spin" />} Ürünü Kaydet
+                  {saving && <Loader2 className="h-4 w-4 animate-spin" />}
+                  {editingProduct ? 'Değişiklikleri Kaydet' : 'Ürünü Kaydet'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* SERİ NUMARALI CİHAZ DÜZENLEME MODALI */}
+      {editingAsset && (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-black/50 p-4">
+          <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl dark:bg-slate-900">
+            <div className="flex items-center justify-between border-b border-slate-200 pb-3 dark:border-slate-800">
+              <div>
+                <h3 className="font-bold">Seri Numaralı Cihazı Düzenle</h3>
+                <p className="text-xs text-slate-500">
+                  {editingAsset.product_name} ({editingAsset.inventory_code})
+                </p>
+              </div>
+              <button onClick={() => setEditingAsset(null)}>
+                <X className="h-5 w-5 text-slate-400" />
+              </button>
+            </div>
+            <form onSubmit={submitAssetEdit} className="mt-4 space-y-4">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="block text-sm font-medium">
+                  Seri Numarası *
+                  <input
+                    required
+                    value={aSerial}
+                    onChange={e => setASerial(e.target.value)}
+                    className={inputCls + ' mt-1 font-mono'}
+                  />
+                </label>
+                <label className="block text-sm font-medium">
+                  Durum
+                  <select value={aStatus} onChange={e => setAStatus(e.target.value)} className={inputCls + ' mt-1'}>
+                    {Object.entries(STATUS_LABELS).map(([k, v]) => (
+                      <option key={k} value={k}>
+                        {v.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="block text-sm font-medium">
+                  Depo Adı
+                  <input value={aWarehouse} onChange={e => setAWarehouse(e.target.value)} className={inputCls + ' mt-1'} />
+                </label>
+                <label className="block text-sm font-medium">
+                  Raf / Bölüm
+                  <input value={aShelf} onChange={e => setAShelf(e.target.value)} className={inputCls + ' mt-1'} />
+                </label>
+                <label className="block text-sm font-medium">
+                  Alış Maliyeti
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={aPurchasePrice}
+                    onChange={e => setAPurchasePrice(e.target.value)}
+                    className={inputCls + ' mt-1'}
+                  />
+                </label>
+                <div>
+                  <span className="text-sm font-medium">Güncel Piyasa Değeri</span>
+                  <div className="mt-1 flex gap-1.5">
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={aMarketVal}
+                      onChange={e => setAMarketVal(e.target.value)}
+                      className={inputCls}
+                    />
+                    <select
+                      value={aMarketCurr}
+                      onChange={e => setAMarketCurr(e.target.value as 'TRY' | 'EUR' | 'USD')}
+                      className="rounded-lg border border-slate-300 bg-white px-2 text-xs dark:border-slate-700 dark:bg-slate-800"
+                    >
+                      <option value="TRY">TL</option>
+                      <option value="EUR">EUR</option>
+                      <option value="USD">USD</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+              <label className="block text-sm font-medium">
+                Cihaz Notu
+                <textarea rows={2} value={aNotes} onChange={e => setANotes(e.target.value)} className={inputCls + ' mt-1'} />
+              </label>
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setEditingAsset(null)}
+                  className="rounded-lg border border-slate-300 px-4 py-2 text-sm dark:border-slate-700"
+                >
+                  İptal
+                </button>
+                <button className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700">
+                  Kaydet
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* PROJEYE KAYDIR (HIZLI GÖNDERİM) MODALI */}
+      {shiftModal && (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-black/50 p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl dark:bg-slate-900">
+            <div className="flex items-center justify-between border-b border-slate-200 pb-3 dark:border-slate-800">
+              <div>
+                <h3 className="font-bold">Malzemeyi Projeye Kaydır</h3>
+                <p className="text-xs text-slate-500">
+                  {shiftModal.asset
+                    ? `${shiftModal.asset.product_name} (${shiftModal.asset.serial_number})`
+                    : shiftModal.product?.name}
+                </p>
+              </div>
+              <button onClick={() => setShiftModal(null)}>
+                <X className="h-5 w-5 text-slate-400" />
+              </button>
+            </div>
+            <form onSubmit={submitShiftToProject} className="mt-4 space-y-4">
+              <label className="block text-sm font-medium">
+                Hedef Proje *
+                <select
+                  required
+                  value={shiftProjectId}
+                  onChange={e => setShiftProjectId(e.target.value)}
+                  className={inputCls + ' mt-1'}
+                >
+                  <option value="">— Proje Seçin —</option>
+                  {projects.map(pr => (
+                    <option key={pr.id} value={pr.id}>
+                      [{pr.code}] {pr.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              {!shiftModal.asset && shiftModal.product?.tracking_type === 'serial' && (
+                <label className="block text-sm font-medium">
+                  Gönderilecek Seri Numaralı Cihaz *
+                  <select
+                    required
+                    value={shiftAssetId}
+                    onChange={e => setShiftAssetId(e.target.value)}
+                    className={inputCls + ' mt-1 font-mono'}
+                  >
+                    <option value="">— Cihaz Seri No Seçin —</option>
+                    {shiftProdAssets
+                      .filter(x => x.status !== 'in_project')
+                      .map(x => (
+                        <option key={x.id} value={x.id}>
+                          {x.serial_number} ({x.warehouse_name || 'Depo'})
+                        </option>
+                      ))}
+                  </select>
+                </label>
+              )}
+
+              {!shiftModal.asset && shiftModal.product?.tracking_type === 'quantity' && (
+                <label className="block text-sm font-medium">
+                  Gönderilecek Miktar ({shiftModal.product.unit}) * (Mevcut: {shiftModal.product.quantity})
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0.01"
+                    max={Number(shiftModal.product.quantity) || undefined}
+                    required
+                    value={shiftQty}
+                    onChange={e => setShiftQty(e.target.value)}
+                    className={inputCls + ' mt-1'}
+                  />
+                </label>
+              )}
+
+              <label className="block text-sm font-medium">
+                Gönderim Açıklaması / Not
+                <input
+                  value={shiftNote}
+                  onChange={e => setShiftNote(e.target.value)}
+                  placeholder="Örn: Sahne kurulumu için gönderildi"
+                  className={inputCls + ' mt-1'}
+                />
+              </label>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShiftModal(null)}
+                  className="rounded-lg border border-slate-300 px-4 py-2 text-sm dark:border-slate-700"
+                >
+                  İptal
+                </button>
+                <button className="flex items-center gap-1.5 rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700">
+                  <Send className="h-4 w-4" /> Projeye Gönder
                 </button>
               </div>
             </form>
@@ -1134,9 +1722,27 @@ export default function InventoryPage() {
                     .join(' • ')}
                 </p>
               </div>
-              <button onClick={() => setSelectedProduct(null)}>
-                <X className="h-5 w-5 text-slate-400" />
-              </button>
+              <div className="flex items-center gap-2">
+                {can('product.update') && (
+                  <button
+                    onClick={() => openEditModal(selectedProduct)}
+                    className="flex items-center gap-1 rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800"
+                  >
+                    <Edit3 className="h-3.5 w-3.5" /> Düzenle
+                  </button>
+                )}
+                {can('product.delete') && (
+                  <button
+                    onClick={() => handleDeleteProduct(selectedProduct)}
+                    className="flex items-center gap-1 rounded-lg border border-rose-200 px-3 py-1.5 text-xs font-semibold text-rose-600 hover:bg-rose-50 dark:border-rose-900/50"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" /> Sil
+                  </button>
+                )}
+                <button onClick={() => setSelectedProduct(null)}>
+                  <X className="h-5 w-5 text-slate-400" />
+                </button>
+              </div>
             </div>
 
             <div className="mt-5 space-y-6">
@@ -1165,8 +1771,10 @@ export default function InventoryPage() {
                   </div>
                 </div>
                 <div>
-                  <div className="text-xs text-slate-500">Garanti Bitişi</div>
-                  <div className="font-semibold">{selectedProduct.warranty_end || '—'}</div>
+                  <div className="text-xs text-slate-500">Aktif Projeler</div>
+                  <div className="font-semibold text-indigo-600 dark:text-indigo-400">
+                    {selectedProduct.active_projects_summary || 'Depoda'}
+                  </div>
                 </div>
               </div>
 
@@ -1269,7 +1877,7 @@ export default function InventoryPage() {
               {selectedProduct.tracking_type === 'serial' && (
                 <div className="space-y-3 border-t border-slate-200 pt-4 dark:border-slate-800">
                   <h3 className="text-sm font-bold">
-                    BuModele Ait Seri Numaralı Cihazlar ({prodAssets.length})
+                    Bu Modele Ait Seri Numaralı Cihazlar ({prodAssets.length})
                   </h3>
 
                   {can('product.create') && (
@@ -1286,15 +1894,15 @@ export default function InventoryPage() {
                     </form>
                   )}
 
-                  <div className="max-h-64 overflow-y-auto rounded-xl border border-slate-200 dark:border-slate-800">
+                  <div className="max-h-72 overflow-y-auto rounded-xl border border-slate-200 dark:border-slate-800">
                     <table className="w-full text-xs">
                       <thead className="bg-slate-50 text-left uppercase text-slate-500 dark:bg-slate-800">
                         <tr>
                           <th className="p-2.5">Envanter Kodu</th>
                           <th className="p-2.5">Seri No</th>
-                          <th className="p-2.5">Konum</th>
+                          <th className="p-2.5">Konum / Proje</th>
                           <th className="p-2.5">Durum</th>
-                          <th className="p-2.5 text-right">QR</th>
+                          <th className="p-2.5 text-right">İşlem</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -1303,18 +1911,49 @@ export default function InventoryPage() {
                             <td className="p-2.5 font-mono text-brand-600">{a.inventory_code}</td>
                             <td className="p-2.5 font-mono font-bold">{a.serial_number}</td>
                             <td className="p-2.5">
-                              {[a.warehouse_name, a.shelf_section].filter(Boolean).join(' / ') || '—'}
+                              <div>{[a.warehouse_name, a.shelf_section].filter(Boolean).join(' / ') || '—'}</div>
+                              {a.assigned_project_name && (
+                                <span className="text-[11px] font-semibold text-indigo-600">
+                                  Proje: {a.assigned_project_name}
+                                </span>
+                              )}
                             </td>
                             <td className="p-2.5">
                               {STATUS_LABELS[a.status]?.label || a.status}
                             </td>
                             <td className="p-2.5 text-right">
-                              <button
-                                onClick={() => setQrModalAsset(a)}
-                                className="text-brand-600 hover:underline"
-                              >
-                                Göster
-                              </button>
+                              <div className="inline-flex items-center gap-1.5">
+                                {can('project.manage') && a.status !== 'in_project' && (
+                                  <button
+                                    onClick={() => openShiftToProjectModal({ asset: a })}
+                                    className="font-semibold text-indigo-600 hover:underline"
+                                  >
+                                    Projeye
+                                  </button>
+                                )}
+                                {can('product.update') && (
+                                  <button
+                                    onClick={() => openAssetEditModal(a)}
+                                    className="text-slate-600 hover:underline dark:text-slate-300"
+                                  >
+                                    Düzenle
+                                  </button>
+                                )}
+                                <button
+                                  onClick={() => setQrModalAsset(a)}
+                                  className="text-brand-600 hover:underline"
+                                >
+                                  QR
+                                </button>
+                                {can('product.delete') && (
+                                  <button
+                                    onClick={() => handleDeleteAsset(a)}
+                                    className="text-rose-600 hover:underline"
+                                  >
+                                    Sil
+                                  </button>
+                                )}
+                              </div>
                             </td>
                           </tr>
                         ))}

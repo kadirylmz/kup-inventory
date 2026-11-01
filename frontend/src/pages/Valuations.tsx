@@ -312,19 +312,39 @@ export default function ValuationsPage() {
                     {fmt(it.net_book_value_converted)} {currency}
                   </td>
                   <td className="px-4 py-2.5 text-right">
-                    <button
-                      onClick={() => {
-                        setCorrModal(it)
-                        setCorrForm(f => ({
-                          ...f,
-                          unit_price: String(it.original_purchase_cost / Math.max(1, it.quantity)),
-                          currency: it.purchase_currency,
-                        }))
-                      }}
-                      className="inline-flex items-center gap-1 rounded-md border border-slate-200 px-2.5 py-1 text-xs font-medium hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800"
-                    >
-                      <FileEdit className="h-3.5 w-3.5" /> Alış Düzeltme
-                    </button>
+                    <div className="inline-flex items-center gap-1.5">
+                      <button
+                        onClick={() => {
+                          setVForm({
+                            product_id: it.product_id,
+                            condition: 'excellent',
+                            market_value: String(it.original_market_value ? it.original_market_value / Math.max(1, it.quantity) : ''),
+                            currency: it.market_currency || 'EUR',
+                            valuation_source: 'Güncel Piyasa Değerlemesi',
+                            note: '',
+                            auto_approve: true,
+                          })
+                          setResearchResult(null)
+                          setValModal(true)
+                        }}
+                        className="inline-flex items-center gap-1 rounded-md border border-emerald-200 bg-emerald-50/60 px-2.5 py-1 text-xs font-semibold text-emerald-700 hover:bg-emerald-100 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-300"
+                      >
+                        <Sparkles className="h-3.5 w-3.5" /> Piyasa Değeri Güncelle
+                      </button>
+                      <button
+                        onClick={() => {
+                          setCorrModal(it)
+                          setCorrForm(f => ({
+                            ...f,
+                            unit_price: String(it.original_purchase_cost / Math.max(1, it.quantity)),
+                            currency: it.purchase_currency,
+                          }))
+                        }}
+                        className="inline-flex items-center gap-1 rounded-md border border-slate-200 px-2.5 py-1 text-xs font-medium hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800"
+                      >
+                        <FileEdit className="h-3.5 w-3.5" /> Alış Düzeltme
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}

@@ -258,8 +258,18 @@ def send_equipment_to_project(
         else:
             qty = it.quantity
             prev_loc = prod.warehouse_name or "Depo"
-            if prod.tracking_type == "quantity" and body.from_warehouse_id:
-                _adjust_balance(db, me.tenant_id, prod, body.from_warehouse_id, None, -qty)
+            if prod.tracking_type == "quantity":
+                if body.from_warehouse_id:
+                    _adjust_balance(db, me.tenant_id, prod, body.from_warehouse_id, None, -qty)
+                else:
+                    if (prod.quantity or Decimal("0")) < qty:
+                        raise HTTPException(
+                            422,
+                            f"'{prod.name}' için yeterli stok yok (Mevcut: {prod.quantity or 0}, İstenen: {qty}).",
+                        )
+                    prod.quantity = (prod.quantity or Decimal("0")) - qty
+                if prod.quantity == Decimal("0"):
+                    prod.status = "in_project"
 
         db.add(
             ProjectAsset(
@@ -344,8 +354,13 @@ def return_equipment_from_project(
         pa.asset.assigned_project_name = None
         if to_wh:
             pa.asset.warehouse_name = to_wh.name
-    elif pa.product and pa.product.tracking_type == "quantity" and to_wh:
-        _adjust_balance(db, me.tenant_id, pa.product, to_wh.id, None, body.returned_quantity)
+    elif pa.product and pa.product.tracking_type == "quantity":
+        if to_wh:
+            _adjust_balance(db, me.tenant_id, pa.product, to_wh.id, None, body.returned_quantity)
+        else:
+            pa.product.quantity = (pa.product.quantity or Decimal("0")) + body.returned_quantity
+        if pa.product.quantity > Decimal("0") and pa.product.status == "in_project":
+            pa.product.status = "in_warehouse"
 
     mov = StockMovement(
         tenant_id=me.tenant_id,

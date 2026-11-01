@@ -26,11 +26,31 @@ def test_phase5_to_8_complete(client, admin_headers):
 
     prod_id = three_data["items"][0]["product_id"]
 
-    # 2. Otomatik değerleme araştırması: Geçmiş onaylı kayıt yokken ASLA uydurma değer üretmemeli
-    res_empty = client.get(f"/api/v1/valuations/research?product_id={prod_id}", headers=admin_headers)
+    # 2. Otomatik değerleme araştırması:
+    # a) Piyasa değeri tanımlı olmayan yepyeni bir ürün için uydurma değer üretmemeli (found_reliable_source = False)
+    cats = client.get("/api/v1/categories", headers=admin_headers).json()
+    unvalued_prod = client.post(
+        "/api/v1/products",
+        headers=admin_headers,
+        json={
+            "name": "Değerlemesiz Test Cihazı",
+            "category_id": cats[0]["id"],
+            "brand_name": "ÖzelMarka",
+            "model_name": "ÖzelModel-X1",
+            "tracking_type": "quantity",
+            "unit": "Adet",
+            "quantity": "2",
+        },
+    ).json()
+    res_empty = client.get(f"/api/v1/valuations/research?product_id={unvalued_prod['id']}", headers=admin_headers)
     assert res_empty.status_code == 200
     assert res_empty.json()["found_reliable_source"] is False
     assert res_empty.json()["suggested_value"] is None
+
+    # b) Ürün kartında güncel piyasa değeri tanımlıysa bunu referans olarak çekebilmeli
+    res_card_ref = client.get(f"/api/v1/valuations/research?product_id={prod_id}", headers=admin_headers)
+    assert res_card_ref.status_code == 200
+    assert res_card_ref.json()["found_reliable_source"] is True
 
     # 3. Önerilen (proposed) değerleme oluştur ve kullanıcı onayıyla uygula
     val_prop = client.post(
@@ -110,6 +130,23 @@ def test_phase5_to_8_complete(client, admin_headers):
     )
     assert scan2.status_code == 200
     assert scan2.json()["summary"]["serial_mismatch"] == 1
+
+    # Sayım notunu düzenle ve yanlış okutulan satırı sil
+    st_upd = client.patch(
+        f"/api/v1/stocktakes/{st_id}",
+        headers=admin_headers,
+        json={"note": "Güncellenmiş yıl sonu sayım notu"},
+    )
+    assert st_upd.status_code == 200
+    assert st_upd.json()["note"] == "Güncellenmiş yıl sonu sayım notu"
+
+    mismatch_item = next(i for i in st_upd.json()["items"] if i["result"] == "serial_mismatch")
+    del_item = client.delete(
+        f"/api/v1/stocktakes/{st_id}/items/{mismatch_item['id']}",
+        headers=admin_headers,
+    )
+    assert del_item.status_code == 200
+    assert del_item.json()["summary"]["serial_mismatch"] == 0
 
     # Sayımı onayla -> yanlış lokasyondaki cihazın deposu güncellenmeli
     st_app = client.post(f"/api/v1/stocktakes/{st_id}/approve", headers=admin_headers)

@@ -168,7 +168,9 @@ class ProductCreate(BaseModel):
     category_id: uuid.UUID
     subcategory_id: uuid.UUID | None = None
     brand_id: uuid.UUID | None = None
+    brand_name: str | None = Field(default=None, max_length=120)
     model_id: uuid.UUID | None = None
+    model_name: str | None = Field(default=None, max_length=150)
     tracking_type: TrackingType = "serial"
     unit: str = Field(default="Adet", max_length=30)
     barcode: str | None = Field(default=None, max_length=100)
@@ -206,7 +208,9 @@ class ProductUpdate(BaseModel):
     category_id: uuid.UUID | None = None
     subcategory_id: uuid.UUID | None = None
     brand_id: uuid.UUID | None = None
+    brand_name: str | None = Field(default=None, max_length=120)
     model_id: uuid.UUID | None = None
+    model_name: str | None = Field(default=None, max_length=150)
     unit: str | None = Field(default=None, max_length=30)
     barcode: str | None = Field(default=None, max_length=100)
     description: str | None = None
@@ -215,8 +219,10 @@ class ProductUpdate(BaseModel):
     min_stock: Decimal | None = Field(default=None, ge=0)
     quantity: Decimal | None = Field(default=None, ge=0)
 
-    # Not: purchase_price kural gereği doğrudan ezilemez; yalnızca ilk kez boşsa atanabilir
     purchase_date: date | None = None
+    purchase_price: Decimal | None = Field(default=None, ge=0)
+    purchase_currency: CurrencyCode | None = None
+    vat_rate: Decimal | None = Field(default=None, ge=0, le=100)
     supplier_id: uuid.UUID | None = None
     invoice_no: str | None = Field(default=None, max_length=100)
     warranty_start: date | None = None
@@ -277,6 +283,7 @@ class ProductOut(BaseModel):
     location_detail: str | None
     internal_notes: str | None
     primary_image_url: str | None = None
+    active_projects_summary: str | None = None
     is_active: bool
     created_at: datetime
 
@@ -329,12 +336,16 @@ class AssetBulkCreate(BaseModel):
 
 
 class AssetUpdate(BaseModel):
+    serial_number: str | None = Field(default=None, min_length=1, max_length=120)
     barcode: str | None = Field(default=None, max_length=120)
     status: AssetStatus | None = None
     condition: AssetCondition | None = None
     warehouse_name: str | None = Field(default=None, max_length=120)
     shelf_section: str | None = Field(default=None, max_length=120)
     location_detail: str | None = Field(default=None, max_length=180)
+    purchase_date: date | None = None
+    purchase_price: Decimal | None = Field(default=None, ge=0)
+    purchase_currency: CurrencyCode | None = None
     warranty_start: date | None = None
     warranty_end: date | None = None
     current_market_value: Decimal | None = Field(default=None, ge=0)

@@ -224,6 +224,32 @@ def update_brand(
     return BrandOut.model_validate(b)
 
 
+@router.delete("/brands/{brand_id}")
+def delete_brand(
+    brand_id: uuid.UUID,
+    request: Request,
+    db: Session = Depends(get_db),
+    me: User = Depends(require_permission("brand.manage")),
+):
+    b = db.get(Brand, brand_id)
+    if not b or b.tenant_id != me.tenant_id or b.is_deleted:
+        raise HTTPException(404, "Marka bulunamadı.")
+    b.is_deleted = True
+    b.is_active = False
+    write_audit(
+        db,
+        tenant_id=me.tenant_id,
+        user_id=me.id,
+        action="brand.delete",
+        entity="brand",
+        entity_id=b.id,
+        old={"name": b.name},
+        ip=client_ip(request),
+    )
+    db.commit()
+    return {"ok": True}
+
+
 @router.get("/models", response_model=list[ModelOut])
 def list_models(
     brand_id: uuid.UUID | None = None,
@@ -315,6 +341,32 @@ def update_model(
     return mo
 
 
+@router.delete("/models/{model_id}")
+def delete_model(
+    model_id: uuid.UUID,
+    request: Request,
+    db: Session = Depends(get_db),
+    me: User = Depends(require_permission("brand.manage")),
+):
+    m = db.get(ProductModel, model_id)
+    if not m or m.tenant_id != me.tenant_id or m.is_deleted:
+        raise HTTPException(404, "Model bulunamadı.")
+    m.is_deleted = True
+    m.is_active = False
+    write_audit(
+        db,
+        tenant_id=me.tenant_id,
+        user_id=me.id,
+        action="model.delete",
+        entity="model",
+        entity_id=m.id,
+        old={"name": m.name},
+        ip=client_ip(request),
+    )
+    db.commit()
+    return {"ok": True}
+
+
 # ==========================================
 # 3. SUPPLIERS
 # ==========================================
@@ -356,6 +408,59 @@ def create_supplier(
     return s
 
 
+@router.patch("/suppliers/{supplier_id}", response_model=SupplierOut)
+def update_supplier(
+    supplier_id: uuid.UUID,
+    body: SupplierUpdate,
+    request: Request,
+    db: Session = Depends(get_db),
+    me: User = Depends(require_permission("product.update")),
+):
+    s = db.get(Supplier, supplier_id)
+    if not s or s.tenant_id != me.tenant_id or s.is_deleted:
+        raise HTTPException(404, "Tedarikçi bulunamadı.")
+    for k, v in body.model_dump(exclude_unset=True).items():
+        setattr(s, k, v)
+    write_audit(
+        db,
+        tenant_id=me.tenant_id,
+        user_id=me.id,
+        action="supplier.update",
+        entity="supplier",
+        entity_id=s.id,
+        new=body.model_dump(exclude_unset=True),
+        ip=client_ip(request),
+    )
+    db.commit()
+    return s
+
+
+@router.delete("/suppliers/{supplier_id}")
+def delete_supplier(
+    supplier_id: uuid.UUID,
+    request: Request,
+    db: Session = Depends(get_db),
+    me: User = Depends(require_permission("product.delete")),
+):
+    s = db.get(Supplier, supplier_id)
+    if not s or s.tenant_id != me.tenant_id or s.is_deleted:
+        raise HTTPException(404, "Tedarikçi bulunamadı.")
+    s.is_deleted = True
+    s.is_active = False
+    write_audit(
+        db,
+        tenant_id=me.tenant_id,
+        user_id=me.id,
+        action="supplier.delete",
+        entity="supplier",
+        entity_id=s.id,
+        old={"name": s.name},
+        ip=client_ip(request),
+    )
+    db.commit()
+    return {"ok": True}
+
+
 # ==========================================
 # 4. PRODUCTS (KATALOG & ADET BAZLI ÜRÜNLER)
 # ==========================================
@@ -380,7 +485,57 @@ def _next_asset_code(db: Session, tenant_id: uuid.UUID, prod_code: str, start_id
         seq += 1
 
 
-def _to_product_out(p: Product, asset_counts: dict[uuid.UUID, int]) -> ProductOut:
+def _resolve_brand_and_model(
+    db: Session,
+    tenant_id: uuid.UUID,
+    brand_id: uuid.UUID | None,
+    brand_name: str | None,
+    model_id: uuid.UUID | None,
+    model_name: str | None,
+) -> tuple[uuid.UUID | None, uuid.UUID | None]:
+    """Kullanıcı marka veya modeli serbest metin olarak yazdığında bulur ya da otomatik oluşturur."""
+    resolved_brand_id = brand_id
+    if not resolved_brand_id and brand_name and brand_name.strip():
+        bname = brand_name.strip()
+        existing_b = db.scalar(
+            select(Brand).where(Brand.tenant_id == tenant_id, func.lower(Brand.name) == bname.lower())
+        )
+        if existing_b:
+            existing_b.is_deleted = False
+            resolved_brand_id = existing_b.id
+        else:
+            nb = Brand(tenant_id=tenant_id, name=bname)
+            db.add(nb)
+            db.flush()
+            resolved_brand_id = nb.id
+
+    resolved_model_id = model_id
+    if not resolved_model_id and model_name and model_name.strip() and resolved_brand_id:
+        mname = model_name.strip()
+        existing_m = db.scalar(
+            select(ProductModel).where(
+                ProductModel.tenant_id == tenant_id,
+                ProductModel.brand_id == resolved_brand_id,
+                func.lower(ProductModel.name) == mname.lower(),
+            )
+        )
+        if existing_m:
+            existing_m.is_deleted = False
+            resolved_model_id = existing_m.id
+        else:
+            nm = ProductModel(tenant_id=tenant_id, brand_id=resolved_brand_id, name=mname)
+            db.add(nm)
+            db.flush()
+            resolved_model_id = nm.id
+
+    return resolved_brand_id, resolved_model_id
+
+
+def _to_product_out(
+    p: Product,
+    asset_counts: dict[uuid.UUID, int],
+    project_summaries: dict[uuid.UUID, str] | None = None,
+) -> ProductOut:
     po = ProductOut.model_validate(p)
     po.category_name = p.category.name if p.category else ""
     po.subcategory_name = p.subcategory.name if p.subcategory else None
@@ -390,6 +545,8 @@ def _to_product_out(p: Product, asset_counts: dict[uuid.UUID, int]) -> ProductOu
     po.serial_asset_count = asset_counts.get(p.id, 0)
     po.primary_image_url = f"/api/v1/files/{p.primary_image_id}" if p.primary_image_id else None
     po.attributes = [AttributeItem(key=a.key, value=a.value) for a in p.attributes]
+    if project_summaries:
+        po.active_projects_summary = project_summaries.get(p.id)
     return po
 
 
@@ -432,7 +589,24 @@ def list_products(
             .group_by(Asset.product_id)
         ).all()
     )
-    return [_to_product_out(p, asset_counts) for p in products]
+
+    from app.models.project_license_maintenance import ProjectAsset
+
+    proj_assets = db.scalars(
+        select(ProjectAsset).where(
+            ProjectAsset.tenant_id == me.tenant_id,
+            ProjectAsset.is_deleted.is_(False),
+        )
+    ).all()
+    proj_map: dict[uuid.UUID, list[str]] = {}
+    for pa in proj_assets:
+        rem = pa.quantity - pa.returned_quantity
+        if rem > 0 and pa.project:
+            label = f"{pa.project.name} ({int(rem) if rem == int(rem) else rem})"
+            proj_map.setdefault(pa.product_id, []).append(label)
+    proj_summaries = {k: ", ".join(v) for k, v in proj_map.items()}
+
+    return [_to_product_out(p, asset_counts, proj_summaries) for p in products]
 
 
 @router.get("/products/{product_id}", response_model=ProductOut)
@@ -482,6 +656,9 @@ def create_product(
 
     qty = Decimal(str(len(serials))) if body.tracking_type == "serial" and serials else body.quantity
     val_date = body.last_valuation_date or (date.today() if body.current_market_value is not None else None)
+    res_brand_id, res_model_id = _resolve_brand_and_model(
+        db, me.tenant_id, body.brand_id, body.brand_name, body.model_id, body.model_name
+    )
 
     p = Product(
         tenant_id=me.tenant_id,
@@ -489,8 +666,8 @@ def create_product(
         name=body.name.strip(),
         category_id=body.category_id,
         subcategory_id=body.subcategory_id,
-        brand_id=body.brand_id,
-        model_id=body.model_id,
+        brand_id=res_brand_id,
+        model_id=res_model_id,
         tracking_type=body.tracking_type,
         unit=body.unit,
         barcode=body.barcode,
@@ -587,9 +764,48 @@ def update_product(
     }
     updates = body.model_dump(exclude_unset=True)
     attrs = updates.pop("attributes", None)
+    b_name = updates.pop("brand_name", None)
+    m_name = updates.pop("model_name", None)
+
+    if b_name is not None or m_name is not None or "brand_id" in updates or "model_id" in updates:
+        rb_id, rm_id = _resolve_brand_and_model(
+            db,
+            me.tenant_id,
+            updates.get("brand_id", p.brand_id),
+            b_name,
+            updates.get("model_id", p.model_id),
+            m_name,
+        )
+        updates["brand_id"] = rb_id
+        updates["model_id"] = rm_id
 
     if "current_market_value" in updates and updates["current_market_value"] != p.current_market_value:
         p.last_valuation_date = updates.get("last_valuation_date") or date.today()
+        new_mval = updates["current_market_value"]
+        new_mcurr = updates.get("market_value_currency") or p.market_value_currency
+        for a in db.scalars(
+            select(Asset).where(
+                Asset.tenant_id == me.tenant_id,
+                Asset.product_id == p.id,
+                Asset.is_deleted.is_(False),
+            )
+        ):
+            a.current_market_value = new_mval
+            a.market_value_currency = new_mcurr
+            a.last_valuation_date = p.last_valuation_date
+
+    if "purchase_price" in updates and updates["purchase_price"] != p.purchase_price:
+        new_pprice = updates["purchase_price"]
+        new_pcurr = updates.get("purchase_currency") or p.purchase_currency
+        for a in db.scalars(
+            select(Asset).where(
+                Asset.tenant_id == me.tenant_id,
+                Asset.product_id == p.id,
+                Asset.is_deleted.is_(False),
+            )
+        ):
+            a.purchase_price = new_pprice
+            a.purchase_currency = new_pcurr
 
     for k, v in updates.items():
         setattr(p, k, v)
@@ -621,6 +837,35 @@ def update_product(
         or 0
     )
     return _to_product_out(p, {p.id: cnt})
+
+
+@router.delete("/products/{product_id}")
+def delete_product(
+    product_id: uuid.UUID,
+    request: Request,
+    db: Session = Depends(get_db),
+    me: User = Depends(require_permission("product.delete")),
+):
+    p = db.get(Product, product_id)
+    if not p or p.tenant_id != me.tenant_id or p.is_deleted:
+        raise HTTPException(404, "Ürün bulunamadı.")
+    p.is_deleted = True
+    p.is_active = False
+    for a in db.scalars(select(Asset).where(Asset.tenant_id == me.tenant_id, Asset.product_id == p.id)):
+        a.is_deleted = True
+        a.is_active = False
+    write_audit(
+        db,
+        tenant_id=me.tenant_id,
+        user_id=me.id,
+        action="product.delete",
+        entity="product",
+        entity_id=p.id,
+        old={"inventory_code": p.inventory_code, "name": p.name},
+        ip=client_ip(request),
+    )
+    db.commit()
+    return {"ok": True}
 
 
 # ==========================================
@@ -838,6 +1083,42 @@ def update_asset(
     db.commit()
     db.refresh(a)
     return _to_asset_out(a)
+
+
+@router.delete("/assets/{asset_id}")
+def delete_asset(
+    asset_id: uuid.UUID,
+    request: Request,
+    db: Session = Depends(get_db),
+    me: User = Depends(require_permission("product.delete")),
+):
+    a = db.get(Asset, asset_id)
+    if not a or a.tenant_id != me.tenant_id or a.is_deleted:
+        raise HTTPException(404, "Cihaz bulunamadı.")
+    a.is_deleted = True
+    a.is_active = False
+    if a.product:
+        cnt = (
+            db.scalar(
+                select(func.count(Asset.id)).where(
+                    Asset.tenant_id == me.tenant_id, Asset.product_id == a.product_id, Asset.is_deleted.is_(False)
+                )
+            )
+            or 0
+        )
+        a.product.quantity = Decimal(str(cnt))
+    write_audit(
+        db,
+        tenant_id=me.tenant_id,
+        user_id=me.id,
+        action="asset.delete",
+        entity="asset",
+        entity_id=a.id,
+        old={"serial_number": a.serial_number, "inventory_code": a.inventory_code},
+        ip=client_ip(request),
+    )
+    db.commit()
+    return {"ok": True}
 
 
 # ==========================================

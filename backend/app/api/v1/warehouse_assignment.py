@@ -1403,14 +1403,23 @@ def return_assignment_item(
     if item.asset:
         item.asset.status = "in_warehouse"
         item.asset.assigned_employee_name = None
+        item.asset.is_deleted = False
+        item.asset.is_active = True
         if to_wh:
             item.asset.warehouse_name = to_wh.name
+        if item.asset.product and item.asset.product.is_deleted:
+            item.asset.product.is_deleted = False
+            item.asset.product.is_active = True
+            item.asset.product.status = "in_warehouse"
     elif item.product:
+        if item.product.is_deleted:
+            item.product.is_deleted = False
+            item.product.is_active = True
         if to_wh:
             _adjust_balance(db, me.tenant_id, item.product, to_wh.id, None, body.returned_quantity)
         else:
             item.product.quantity = (item.product.quantity or Decimal("0")) + body.returned_quantity
-        if (item.product.quantity or Decimal("0")) > 0 and item.product.status == "assigned":
+        if (item.product.quantity or Decimal("0")) > 0:
             item.product.status = "in_warehouse"
 
     db.add(

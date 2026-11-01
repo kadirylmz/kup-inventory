@@ -404,14 +404,24 @@ def return_equipment_from_project(
     if pa.asset:
         pa.asset.status = "in_warehouse"
         pa.asset.assigned_project_name = None
+        pa.asset.is_deleted = False
+        pa.asset.is_active = True
         if to_wh:
             pa.asset.warehouse_name = to_wh.name
+        if pa.asset.product and pa.asset.product.is_deleted:
+            pa.asset.product.is_deleted = False
+            pa.asset.product.is_active = True
+            pa.asset.product.status = "in_warehouse"
     elif pa.product:
+        # Eğer ürün daha önce envanterden silinmişse veya pasife alınmışsa iade ile birlikte tekrar aktif edilir
+        if pa.product.is_deleted:
+            pa.product.is_deleted = False
+            pa.product.is_active = True
         if to_wh:
             _adjust_balance(db, me.tenant_id, pa.product, to_wh.id, None, body.returned_quantity)
         else:
             pa.product.quantity = (pa.product.quantity or Decimal("0")) + body.returned_quantity
-        if pa.product.quantity > Decimal("0") and pa.product.status == "in_project":
+        if pa.product.quantity > Decimal("0"):
             pa.product.status = "in_warehouse"
 
     mov = StockMovement(

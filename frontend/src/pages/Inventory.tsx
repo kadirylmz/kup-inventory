@@ -838,7 +838,8 @@ export default function InventoryPage() {
                     <th className="p-3.5">Kategori</th>
                     <th className="p-3.5">Takip / Miktar</th>
                     <th className="p-3.5">Birim Alış</th>
-                    <th className="p-3.5">Piyasa Değeri</th>
+                    <th className="p-3.5">Birim Piyasa Değeri</th>
+                    <th className="p-3.5">Toplam Piyasa Değeri</th>
                     <th className="p-3.5">Konum & Proje</th>
                     <th className="p-3.5">Durum</th>
                     <th className="p-3.5 text-right">İşlemler</th>
@@ -902,9 +903,18 @@ export default function InventoryPage() {
                             ? `${fmtMoney(p.purchase_price)} ${SYM[p.purchase_currency] || p.purchase_currency}`
                             : '—'}
                         </td>
-                        <td className="p-3.5 font-medium text-emerald-600 dark:text-emerald-400">
+                        <td className="p-3.5 font-medium text-slate-600 dark:text-slate-300">
                           {p.current_market_value
                             ? `${fmtMoney(p.current_market_value)} ${SYM[p.market_value_currency] || p.market_value_currency}`
+                            : '—'}
+                        </td>
+                        <td className="p-3.5 font-bold text-emerald-600 dark:text-emerald-400">
+                          {p.current_market_value
+                            ? (() => {
+                                const qty = Number(p.quantity) || 0
+                                const totalVal = (Number(p.current_market_value) || 0) * qty
+                                return `${fmtMoney(totalVal)} ${SYM[p.market_value_currency] || p.market_value_currency}`
+                              })()
                             : '—'}
                         </td>
                         <td className="p-3.5 text-xs">

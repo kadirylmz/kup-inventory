@@ -399,8 +399,8 @@ export default function ProjectsPage() {
                           <th className="p-3">Gönderilen</th>
                           <th className="p-3">Dönen</th>
                           <th className="p-3">Hâlâ Projede</th>
-                          <th className="p-3">Alış Maliyeti</th>
-                          <th className="p-3">Piyasa Değeri</th>
+                          <th className="p-3">Toplam Alış Maliyeti</th>
+                          <th className="p-3">Toplam Piyasa Değeri</th>
                           <th className="p-3">Durum</th>
                           <th className="p-3 text-right print:hidden">İade İşlemi</th>
                         </tr>

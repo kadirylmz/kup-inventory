@@ -1,4 +1,4 @@
-import { useState, type ChangeEvent, type FormEvent } from 'react'
+import { useState, useEffect, type ChangeEvent, type FormEvent } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useSearchParams } from 'react-router-dom'
 import {
@@ -154,6 +154,13 @@ export default function InventoryPage() {
   const [statusFilter, setStatusFilter] = useState(searchParams.get('status') || '')
   const [trackFilter, setTrackFilter] = useState('')
 
+  useEffect(() => {
+    const urlStatus = searchParams.get('status')
+    if (urlStatus !== null) {
+      setStatusFilter(urlStatus)
+    }
+  }, [searchParams])
+
   const [openCreate, setOpenCreate] = useState(false)
   const [editingProduct, setEditingProduct] = useState<ProductItem | null>(null)
   const [selectedProduct, setSelectedProduct] = useState<ProductItem | null>(null)
@@ -256,10 +263,19 @@ export default function InventoryPage() {
     queryFn: () => api<ProductItem[]>(`/products?${prodParams.toString()}`),
   })
 
-  const products =
-    statusFilter === 'has_project'
-      ? rawProducts.filter(p => p.status === 'in_project' || !!p.active_projects_summary)
-      : rawProducts
+  const products = rawProducts.filter(p => {
+    if (!statusFilter) return true
+    if (statusFilter === 'has_project' || statusFilter === 'in_project') {
+      return p.status === 'in_project' || !!p.active_projects_summary
+    }
+    if (statusFilter === 'assigned') {
+      return p.status === 'assigned' || Number(p.assigned_quantity || 0) > 0 || !!p.assigned_summary
+    }
+    if (statusFilter === 'in_warehouse') {
+      return p.status === 'in_warehouse' || Number(p.warehouse_quantity ?? p.quantity) > 0
+    }
+    return p.status === statusFilter
+  })
 
   const assetParams = new URLSearchParams()
   if (q) assetParams.set('q', q)

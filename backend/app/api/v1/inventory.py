@@ -600,7 +600,62 @@ def list_products(
         stmt = stmt.where(Product.brand_id == brand_id)
     if tracking_type:
         stmt = stmt.where(Product.tracking_type == tracking_type)
-    if status:
+    if status == "assigned":
+        from app.models.warehouse_assignment import AssignmentItem, Assignment
+        asg_prod_ids = select(AssignmentItem.product_id).join(Assignment, Assignment.id == AssignmentItem.assignment_id).where(
+            Assignment.tenant_id == me.tenant_id,
+            Assignment.is_deleted.is_(False),
+            AssignmentItem.is_returned.is_(False),
+        )
+        asg_asset_prod_ids = select(Asset.product_id).where(
+            Asset.tenant_id == me.tenant_id,
+            Asset.is_deleted.is_(False),
+            Asset.status == "assigned",
+        )
+        stmt = stmt.where(
+            or_(
+                Product.status == "assigned",
+                Product.id.in_(asg_prod_ids),
+                Product.id.in_(asg_asset_prod_ids),
+            )
+        )
+    elif status == "in_project":
+        from app.models.project_license_maintenance import ProjectAsset
+        proj_prod_ids = select(ProjectAsset.product_id).where(
+            ProjectAsset.tenant_id == me.tenant_id,
+            ProjectAsset.status == "in_project",
+        )
+        proj_asset_prod_ids = select(Asset.product_id).where(
+            Asset.tenant_id == me.tenant_id,
+            Asset.is_deleted.is_(False),
+            Asset.status == "in_project",
+        )
+        stmt = stmt.where(
+            or_(
+                Product.status == "in_project",
+                Product.id.in_(proj_prod_ids),
+                Product.id.in_(proj_asset_prod_ids),
+            )
+        )
+    elif status == "in_warehouse":
+        from app.models.warehouse_assignment import StockBalance
+        wh_prod_ids = select(StockBalance.product_id).where(
+            StockBalance.tenant_id == me.tenant_id,
+            StockBalance.quantity > 0,
+        )
+        wh_asset_prod_ids = select(Asset.product_id).where(
+            Asset.tenant_id == me.tenant_id,
+            Asset.is_deleted.is_(False),
+            Asset.status == "in_warehouse",
+        )
+        stmt = stmt.where(
+            or_(
+                Product.status == "in_warehouse",
+                Product.id.in_(wh_prod_ids),
+                Product.id.in_(wh_asset_prod_ids),
+            )
+        )
+    elif status:
         stmt = stmt.where(Product.status == status)
     if q:
         term = f"%{q.strip().lower()}%"

@@ -290,17 +290,35 @@ def send_equipment_to_project(
             if wh_rem <= Decimal("0"):
                 prod.status = "in_project"
 
-        db.add(
-            ProjectAsset(
-                tenant_id=me.tenant_id,
-                project_id=proj.id,
-                product_id=prod.id,
-                asset_id=asset.id if asset else None,
-                quantity=qty,
-                status="in_project",
-                note=it.note or body.note,
+        # Seri numarasız adetli ürünlerde aynı projede aktif satır varsa miktarını artırarak birleştir
+        existing_pa: ProjectAsset | None = None
+        if not asset:
+            existing_pa = db.scalar(
+                select(ProjectAsset).where(
+                    ProjectAsset.tenant_id == me.tenant_id,
+                    ProjectAsset.project_id == proj.id,
+                    ProjectAsset.product_id == prod.id,
+                    ProjectAsset.asset_id.is_(None),
+                    ProjectAsset.status == "in_project",
+                )
             )
-        )
+
+        if existing_pa:
+            existing_pa.quantity += qty
+            if it.note or body.note:
+                existing_pa.note = f"{existing_pa.note}; {it.note or body.note}" if existing_pa.note else (it.note or body.note)
+        else:
+            db.add(
+                ProjectAsset(
+                    tenant_id=me.tenant_id,
+                    project_id=proj.id,
+                    product_id=prod.id,
+                    asset_id=asset.id if asset else None,
+                    quantity=qty,
+                    status="in_project",
+                    note=it.note or body.note,
+                )
+            )
         mov_items.append(
             StockMovementItem(
                 product_id=prod.id,
@@ -430,6 +448,73 @@ def return_equipment_from_project(
     )
     db.commit()
     db.refresh(proj)
+    return _to_project_out(proj)
+
+
+@router.post("/projects/{project_id}/merge-equipment", response_model=ProjectOut)
+def merge_project_equipment(
+    project_id: uuid.UUID,
+    request: Request,
+    db: Session = Depends(get_db),
+    me: User = Depends(require_permission("project.manage")),
+):
+    """
+    Aynı projede yer alan ve aynı ürün (stok) koduna sahip seri numarasız
+    aktif malzeme satırlarını tek bir satırda birleştirir.
+    """
+    proj = db.get(Project, project_id)
+    if not proj or proj.tenant_id != me.tenant_id or proj.is_deleted:
+        raise HTTPException(404, "Proje bulunamadı.")
+
+    # Seri numarasız aktif proje ekipmanları
+    active_pas = db.scalars(
+        select(ProjectAsset).where(
+            ProjectAsset.tenant_id == me.tenant_id,
+            ProjectAsset.project_id == proj.id,
+            ProjectAsset.status == "in_project",
+            ProjectAsset.asset_id.is_(None),
+        ).order_by(ProjectAsset.sent_at.asc())
+    ).all()
+
+    groups: dict[uuid.UUID, list[ProjectAsset]] = {}
+    for pa in active_pas:
+        groups.setdefault(pa.product_id, []).append(pa)
+
+    merged_count = 0
+    for prod_id, items in groups.items():
+        if len(items) > 1:
+            primary = items[0]
+            extra_qty = Decimal("0")
+            extra_ret = Decimal("0")
+            notes: list[str] = [primary.note] if primary.note else []
+
+            for other in items[1:]:
+                extra_qty += other.quantity
+                extra_ret += other.returned_quantity
+                if other.note and other.note not in notes:
+                    notes.append(other.note)
+                db.delete(other)
+                merged_count += 1
+
+            primary.quantity += extra_qty
+            primary.returned_quantity += extra_ret
+            primary.note = "; ".join(notes) if notes else None
+
+    if merged_count > 0:
+        db.flush()
+        write_audit(
+            db,
+            tenant_id=me.tenant_id,
+            user_id=me.id,
+            action="project.merge_equipment",
+            entity="project",
+            entity_id=proj.id,
+            new={"project": proj.name, "merged_rows": merged_count},
+            ip=client_ip(request),
+        )
+        db.commit()
+        db.refresh(proj)
+
     return _to_project_out(proj)
 
 

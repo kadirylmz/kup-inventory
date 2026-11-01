@@ -8,6 +8,7 @@ import {
   Plus,
   Printer,
   RotateCcw,
+  Sparkles,
   Trash2,
   X,
 } from 'lucide-react'
@@ -213,6 +214,21 @@ export default function ProjectsPage() {
     }
   }
 
+  const handleMergeEquipment = async () => {
+    if (!activeProj) return
+    try {
+      await api(`/projects/${activeProj.id}/merge-equipment`, {
+        method: 'POST',
+      })
+      toast.success('Aynı stok kodundaki ürünler başarıyla tek satırda birleştirildi.')
+      qc.invalidateQueries({ queryKey: ['projects'] })
+      qc.invalidateQueries({ queryKey: ['products'] })
+      qc.invalidateQueries({ queryKey: ['warehouse-stock'] })
+    } catch (err) {
+      toast.error((err as Error).message)
+    }
+  }
+
   const inputCls =
     'w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand-500 dark:border-slate-700 dark:bg-slate-800'
 
@@ -348,7 +364,7 @@ export default function ProjectsPage() {
 
               {/* Proje Ekipman Listesi ve PDF Çıktı Butonu */}
               <div className="flex flex-wrap items-center justify-between gap-3 pt-2 print:hidden">
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <h3 className="text-base font-bold">Projedeki Ekipmanlar</h3>
                   <button
                     type="button"
@@ -362,6 +378,18 @@ export default function ProjectsPage() {
                     <Filter className="h-3 w-3" />
                     {showReturned ? 'Tüm Geçmişi Göster (İade Edilenler Dahil)' : 'Yalnızca Projedeki Mevcutlar'}
                   </button>
+
+                  {can('project.manage') && (
+                    <button
+                      type="button"
+                      onClick={handleMergeEquipment}
+                      title="Aynı stok kodundaki adetli ürün satırlarını tek satırda birleştirir"
+                      className="inline-flex items-center gap-1 rounded-md border border-purple-200 bg-purple-50/70 px-2.5 py-1 text-xs font-semibold text-purple-700 hover:bg-purple-100 dark:border-purple-800 dark:bg-purple-950/40 dark:text-purple-300 transition"
+                    >
+                      <Sparkles className="h-3 w-3" />
+                      Aynı Ürünleri Birleştir
+                    </button>
+                  )}
                 </div>
 
                 <button

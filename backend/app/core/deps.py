@@ -56,9 +56,9 @@ def has_permission(user: User, code: str) -> bool:
     return user.is_superuser or code in user_permissions(user)
 
 
-def require_permission(code: str):
+def require_permission(*codes: str):
     def checker(user: User = Depends(get_current_user)) -> User:
-        if not has_permission(user, code):
+        if not any(has_permission(user, c) for c in codes):
             raise HTTPException(status.HTTP_403_FORBIDDEN, "Bu işlem için yetkiniz yok.")
         return user
 

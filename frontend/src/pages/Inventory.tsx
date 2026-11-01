@@ -889,13 +889,27 @@ export default function InventoryPage() {
                         <td className="p-3.5 text-slate-600 dark:text-slate-300">{p.category_name}</td>
                         <td className="p-3.5">
                           {p.tracking_type === 'serial' ? (
-                            <span className="inline-flex items-center gap-1 rounded-md bg-indigo-50 px-2 py-0.5 text-xs font-semibold text-indigo-700 dark:bg-indigo-500/15 dark:text-indigo-300">
-                              <Layers className="h-3 w-3" /> {p.serial_asset_count} Seri Cihaz
-                            </span>
+                            <div className="space-y-1">
+                              <span className="inline-flex items-center gap-1 rounded-md bg-indigo-50 px-2 py-0.5 text-xs font-semibold text-indigo-700 dark:bg-indigo-500/15 dark:text-indigo-300">
+                                <Layers className="h-3 w-3" /> {p.serial_asset_count} Seri Cihaz
+                              </span>
+                              {p.active_projects_summary && (
+                                <div className="text-[11px] font-medium text-indigo-600 dark:text-indigo-400">
+                                  ↳ {p.active_projects_summary}
+                                </div>
+                              )}
+                            </div>
                           ) : (
-                            <span className="font-semibold">
-                              {fmtQty(p.quantity)} {p.unit}
-                            </span>
+                            <div className="space-y-1">
+                              <span className="font-semibold">
+                                {fmtQty(p.quantity)} {p.unit}
+                              </span>
+                              {p.active_projects_summary && (
+                                <div className="text-[11px] font-medium text-indigo-600 dark:text-indigo-400">
+                                  ↳ {p.active_projects_summary}
+                                </div>
+                              )}
+                            </div>
                           )}
                         </td>
                         <td className="p-3.5 font-medium">

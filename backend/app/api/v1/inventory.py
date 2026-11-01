@@ -618,7 +618,8 @@ def list_products(
     for pa in proj_assets:
         rem = pa.quantity - pa.returned_quantity
         if rem > 0 and pa.project and not pa.project.is_deleted:
-            label = f"{pa.project.name} ({int(rem) if rem == int(rem) else rem})"
+            prod_unit = pa.product.unit if pa.product else "Adet"
+            label = f"{pa.project.name} ({int(rem) if rem == int(rem) else rem} {prod_unit})"
             proj_map.setdefault(pa.product_id, []).append(label)
     proj_summaries = {k: ", ".join(v) for k, v in proj_map.items()}
 
@@ -642,7 +643,22 @@ def get_product(
         )
         or 0
     )
-    return _to_product_out(p, {p.id: cnt})
+
+    from app.models.project_license_maintenance import ProjectAsset
+    proj_assets = db.scalars(
+        select(ProjectAsset).where(
+            ProjectAsset.tenant_id == me.tenant_id,
+            ProjectAsset.product_id == p.id,
+        )
+    ).all()
+    labels: list[str] = []
+    for pa in proj_assets:
+        rem = pa.quantity - pa.returned_quantity
+        if rem > 0 and pa.project and not pa.project.is_deleted:
+            labels.append(f"{pa.project.name} ({int(rem) if rem == int(rem) else rem} {p.unit or 'Adet'})")
+    proj_summary = {p.id: ", ".join(labels)} if labels else None
+
+    return _to_product_out(p, {p.id: cnt}, proj_summary)
 
 
 @router.post("/products", response_model=ProductOut, status_code=201)

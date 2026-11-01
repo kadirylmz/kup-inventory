@@ -1,10 +1,11 @@
 import hashlib
 import json
 import os
+import secrets
 import socket
 import uuid
 import zipfile
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
 
@@ -1686,6 +1687,51 @@ class AppLicenseActivateIn(BaseModel):
     license_key: str = Field(min_length=8, max_length=120)
     max_users: int = Field(default=100, ge=1)
     max_assets: int = Field(default=50000, ge=100)
+    duration_years: int = Field(default=1, ge=0, le=10, description="0 ise süresiz, 1-10 yıl süreli")
+
+
+class AppLicenseGenerateIn(BaseModel):
+    customer_name: str = Field(min_length=2, max_length=180)
+    edition: str = "Enterprise"
+    duration_years: int = Field(default=1, ge=0, le=10, description="0: Süresiz, 1: 1 Yıl, 2: 2 Yıl, vb.")
+    max_users: int = Field(default=100, ge=1)
+    max_assets: int = Field(default=50000, ge=100)
+
+
+@router.post("/app-license/generate")
+def generate_app_license_key(
+    body: AppLicenseGenerateIn,
+    me: User = Depends(require_permission("app_license.manage")),
+):
+    """
+    Kullanıcının başka bir kuruluşa veya bu sisteme vermek üzere
+    1 yıl, 2 yıl veya süresiz yeni lisans anahtarı üretmesini sağlar.
+    """
+    s = get_settings()
+    prefix = "KUP"
+    edition_code = "ENT" if "enter" in body.edition.lower() else "PRO"
+    dur_tag = f"{body.duration_years}Y" if body.duration_years > 0 else "LIFETIME"
+    rand_segment = secrets.token_hex(3).upper()
+    current_year = date.today().year
+
+    # Örn: KUP-ENT-2026-1Y-A3F812
+    generated_key = f"{prefix}-{edition_code}-{current_year}-{dur_tag}-{rand_segment}"
+    sig = hashlib.sha256(f"{generated_key}:{s.secret_key}".encode()).hexdigest()
+
+    expiry_date: date | None = None
+    if body.duration_years > 0:
+        expiry_date = date.today() + timedelta(days=365 * body.duration_years)
+
+    return {
+        "license_key": generated_key,
+        "customer_name": body.customer_name,
+        "edition": body.edition,
+        "duration_years": body.duration_years,
+        "expires_at": expiry_date.isoformat() if expiry_date else None,
+        "signature": sig,
+        "max_users": body.max_users,
+        "max_assets": body.max_assets,
+    }
 
 
 @router.get("/app-license")
@@ -1702,8 +1748,14 @@ def get_app_license_status(
     asset_cnt = db.scalar(select(func.count(Asset.id)).where(Asset.tenant_id == me.tenant_id, Asset.is_deleted.is_(False))) or 0
     if not lic:
         return {"is_licensed": False, "current_users": user_cnt, "current_assets": asset_cnt}
+
+    is_expired = False
+    if lic.expires_at and lic.expires_at < date.today():
+        is_expired = True
+
     return {
-        "is_licensed": lic.is_active,
+        "is_licensed": lic.is_active and not is_expired,
+        "is_expired": is_expired,
         "customer_name": lic.customer_name,
         "edition": lic.edition,
         "license_key_masked": lic.license_key_masked,
@@ -1731,6 +1783,11 @@ def activate_app_license(
     sig = hashlib.sha256(f"{key_clean}:{s.secret_key}".encode()).hexdigest()
     masked = f"{key_clean[:4]}-****-****-{key_clean[-4:]}"
 
+    # Süre hesaplama (0: Süresiz, 1-10: Yıl bazlı)
+    exp_date: date | None = None
+    if body.duration_years > 0:
+        exp_date = date.today() + timedelta(days=365 * body.duration_years)
+
     lic = db.scalar(select(AppLicense).where(AppLicense.tenant_id == me.tenant_id))
     if not lic:
         lic = AppLicense(
@@ -1743,6 +1800,7 @@ def activate_app_license(
             max_assets=body.max_assets,
             features={"offline_lan": True, "pdf_reports": True, "qr_system": True, "multi_warehouse": True},
             issued_at=date.today(),
+            expires_at=exp_date,
             signature=sig,
             is_active=True,
         )
@@ -1755,6 +1813,8 @@ def activate_app_license(
         lic.license_key_masked = masked
         lic.max_users = body.max_users
         lic.max_assets = body.max_assets
+        lic.issued_at = date.today()
+        lic.expires_at = exp_date
         lic.signature = sig
         lic.is_active = True
 

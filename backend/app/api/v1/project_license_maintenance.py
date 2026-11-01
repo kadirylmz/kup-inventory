@@ -227,6 +227,78 @@ def update_project(
     return _to_project_out(p)
 
 
+@router.delete("/projects/{project_id}", status_code=200)
+def delete_project(
+    project_id: uuid.UUID,
+    request: Request,
+    db: Session = Depends(get_db),
+    me: User = Depends(require_permission("project.manage")),
+):
+    """
+    Projeyi siler.
+    Projeye atanmış ve henüz iade edilmemiş malzemeler varsa otomatik olarak
+    merkez depoya iade edilir ve ürünlerin/cihazların statüleri depoya çekilir.
+    """
+    p = db.get(Project, project_id)
+    if not p or p.tenant_id != me.tenant_id or p.is_deleted:
+        raise HTTPException(404, "Proje bulunamadı.")
+
+    def_wh = db.scalar(
+        select(Warehouse).where(
+            Warehouse.tenant_id == me.tenant_id,
+            Warehouse.is_deleted.is_(False),
+            Warehouse.code == "WH-CENTRAL",
+        )
+    ) or db.scalar(
+        select(Warehouse).where(
+            Warehouse.tenant_id == me.tenant_id,
+            Warehouse.is_deleted.is_(False),
+        ).order_by(Warehouse.created_at.asc())
+    )
+
+    # Projedeki tüm ekipmanları kontrol et ve sahadakileri depoya iade al
+    for pa in list(p.project_assets):
+        rem = pa.quantity - pa.returned_quantity
+        if rem > 0:
+            if pa.asset:
+                pa.asset.status = "in_warehouse"
+                pa.asset.assigned_project_name = None
+                pa.asset.is_deleted = False
+                pa.asset.is_active = True
+                if def_wh:
+                    pa.asset.warehouse_name = def_wh.name
+                if pa.asset.product and pa.asset.product.is_deleted:
+                    pa.asset.product.is_deleted = False
+                    pa.asset.product.is_active = True
+                    pa.asset.product.status = "in_warehouse"
+            elif pa.product:
+                if pa.product.is_deleted:
+                    pa.product.is_deleted = False
+                    pa.product.is_active = True
+                if def_wh:
+                    _adjust_balance(db, me.tenant_id, pa.product, def_wh.id, None, rem)
+                else:
+                    pa.product.quantity = (pa.product.quantity or Decimal("0")) + rem
+                if pa.product.quantity > Decimal("0"):
+                    pa.product.status = "in_warehouse"
+
+    p.is_deleted = True
+    p.is_active = False
+
+    write_audit(
+        db,
+        tenant_id=me.tenant_id,
+        user_id=me.id,
+        action="project.delete",
+        entity="project",
+        entity_id=p.id,
+        old={"code": p.code, "name": p.name},
+        ip=client_ip(request),
+    )
+    db.commit()
+    return {"ok": True, "message": f'"{p.name}" projesi silindi.'}
+
+
 @router.post("/projects/{project_id}/send", response_model=ProjectOut)
 def send_equipment_to_project(
     project_id: uuid.UUID,

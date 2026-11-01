@@ -329,6 +329,30 @@ export default function ProjectsPage() {
     }
   }
 
+  const handleDeleteProject = async (p: ProjectRecord) => {
+    const hasRemaining = p.still_in_project_items > 0
+    const msg = hasRemaining
+      ? `DİKKAT: "${p.name}" (${p.code}) projesini silmek istediğinize emin misiniz?\n\nBu projede hâlâ sahada bulunan ${p.still_in_project_items} kalem malzeme OTOMATİK olarak merkez depoya geri aktarılacaktır.`
+      : `"${p.name}" (${p.code}) projesini silmek istediğinize emin misiniz?`
+
+    if (!confirm(msg)) return
+
+    try {
+      await api(`/projects/${p.id}`, { method: 'DELETE' })
+      toast.success(`"${p.name}" projesi başarıyla silindi.`)
+      if (selectedProjId === p.id) {
+        setSelectedProjId('')
+      }
+      qc.invalidateQueries({ queryKey: ['projects'] })
+      qc.invalidateQueries({ queryKey: ['products'] })
+      qc.invalidateQueries({ queryKey: ['assets'] })
+      qc.invalidateQueries({ queryKey: ['warehouse-stock'] })
+      qc.invalidateQueries({ queryKey: ['inventory-summary'] })
+    } catch (err) {
+      toast.error((err as Error).message)
+    }
+  }
+
   const handleToggleProjectStatus = async (p: ProjectRecord, nextStatus: ProjectRecord['status']) => {
     try {
       await api(`/projects/${p.id}`, {
@@ -418,10 +442,10 @@ export default function ProjectsPage() {
               const isSelected = activeProj?.id === p.id
               const st = PROJ_STATUS[p.status] || { label: p.status, cls: 'bg-slate-100' }
               return (
-                <button
+                <div
                   key={p.id}
                   onClick={() => setSelectedProjId(p.id)}
-                  className={`flex flex-col justify-between rounded-xl border p-4 text-left transition ${
+                  className={`group relative flex flex-col justify-between rounded-xl border p-4 text-left transition cursor-pointer ${
                     isSelected
                       ? 'border-brand-600 bg-brand-50/40 ring-2 ring-brand-500/20 dark:border-indigo-500 dark:bg-indigo-950/30'
                       : 'border-slate-200 bg-white hover:border-slate-300 dark:border-slate-800 dark:bg-slate-900'
@@ -431,9 +455,24 @@ export default function ProjectsPage() {
                     <span className="font-mono text-xs font-bold text-brand-600 dark:text-indigo-400">
                       {p.code}
                     </span>
-                    <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${st.cls}`}>
-                      {st.label}
-                    </span>
+                    <div className="flex items-center gap-1.5">
+                      <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${st.cls}`}>
+                        {st.label}
+                      </span>
+                      {can('project.manage') && (
+                        <button
+                          type="button"
+                          onClick={e => {
+                            e.stopPropagation()
+                            handleDeleteProject(p)
+                          }}
+                          title="Projeyi Sil"
+                          className="rounded p-1 text-slate-400 opacity-0 transition group-hover:opacity-100 hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-950/40"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      )}
+                    </div>
                   </div>
                   <div className="mt-2">
                     <div className="text-base font-bold">{p.name}</div>
@@ -443,7 +482,7 @@ export default function ProjectsPage() {
                     <span>Sahada: {p.still_in_project_items} kalem</span>
                     <span>Dönen: {p.returned_items}</span>
                   </div>
-                </button>
+                </div>
               )
             })}
           </div>
@@ -512,6 +551,14 @@ export default function ProjectsPage() {
                           <RotateCcw className="h-3.5 w-3.5" /> Projeyi Tekrar Aç
                         </button>
                       )}
+
+                      <button
+                        onClick={() => handleDeleteProject(activeProj)}
+                        title="Projeyi Tamamen Sil"
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-rose-300 bg-rose-50 px-3 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-100 dark:border-rose-900/50 dark:bg-rose-950/40 dark:text-rose-300"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" /> Projeyi Sil
+                      </button>
                     </>
                   )}
                 </div>

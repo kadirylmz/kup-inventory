@@ -1153,10 +1153,12 @@ def scrap_product(
 
     old_status = p.status
     p.status = "scrapped"
+    p.current_market_value = Decimal("0")
 
-    # Bağlı tüm seri cihazların statüsünü de hurdaya (scrapped) çek
+    # Bağlı tüm seri cihazların statüsünü de hurdaya (scrapped) çek ve piyasa değerini 0 yap
     for a in db.scalars(select(Asset).where(Asset.tenant_id == me.tenant_id, Asset.product_id == p.id, Asset.is_deleted.is_(False))):
         a.status = "scrapped"
+        a.current_market_value = Decimal("0")
 
     # Depo bakiye sıfırla (hurda artık depoda kullanılabilir stok değil)
     for sb in db.scalars(select(StockBalance).where(StockBalance.tenant_id == me.tenant_id, StockBalance.product_id == p.id)):
@@ -1171,6 +1173,86 @@ def scrap_product(
         entity_id=p.id,
         old={"status": old_status},
         new={"status": "scrapped"},
+        ip=client_ip(request),
+    )
+    db.commit()
+    db.refresh(p)
+    cnt = (
+        db.scalar(
+            select(func.count(Asset.id)).where(
+                Asset.tenant_id == me.tenant_id, Asset.product_id == p.id, Asset.is_deleted.is_(False)
+            )
+        )
+        or 0
+    )
+    return _to_product_out(p, {p.id: cnt})
+
+
+@router.post("/products/{product_id}/unscrap", response_model=ProductOut)
+def unscrap_product(
+    product_id: uuid.UUID,
+    request: Request,
+    db: Session = Depends(get_db),
+    me: User = Depends(require_permission("product.update")),
+):
+    """Hurdaya ayrılmış ürünü ve bağlı cihazları tekrar aktif depoya/envantere kazandırır."""
+    from app.models.warehouse_assignment import Warehouse, StockBalance
+
+    p = db.get(Product, product_id)
+    if not p or p.tenant_id != me.tenant_id or p.is_deleted:
+        raise HTTPException(404, "Ürün bulunamadı.")
+
+    old_status = p.status
+    p.status = "in_warehouse"
+
+    # Bağlı hurda seri cihazları da depoya geri döndür
+    for a in db.scalars(select(Asset).where(Asset.tenant_id == me.tenant_id, Asset.product_id == p.id, Asset.is_deleted.is_(False))):
+        if a.status == "scrapped":
+            a.status = "in_warehouse"
+
+    # Depo bakiyesini tekrar sağla
+    wh = db.scalar(
+        select(Warehouse).where(
+            Warehouse.tenant_id == me.tenant_id,
+            Warehouse.is_deleted.is_(False),
+            Warehouse.name == (p.warehouse_name or "Merkez Depo"),
+        )
+    ) or db.scalar(
+        select(Warehouse).where(
+            Warehouse.tenant_id == me.tenant_id,
+            Warehouse.is_deleted.is_(False),
+        ).order_by(Warehouse.created_at.asc())
+    )
+
+    if wh and p.tracking_type == "quantity":
+        sb = db.scalar(
+            select(StockBalance).where(
+                StockBalance.tenant_id == me.tenant_id,
+                StockBalance.product_id == p.id,
+                StockBalance.warehouse_id == wh.id,
+            )
+        )
+        if sb:
+            sb.quantity = p.quantity or Decimal("1")
+        else:
+            db.add(
+                StockBalance(
+                    tenant_id=me.tenant_id,
+                    product_id=p.id,
+                    warehouse_id=wh.id,
+                    quantity=p.quantity or Decimal("1"),
+                )
+            )
+
+    write_audit(
+        db,
+        tenant_id=me.tenant_id,
+        user_id=me.id,
+        action="product.unscrap",
+        entity="product",
+        entity_id=p.id,
+        old={"status": old_status},
+        new={"status": "in_warehouse"},
         ip=client_ip(request),
     )
     db.commit()
@@ -1453,6 +1535,7 @@ def scrap_asset(
 
     old_status = a.status
     a.status = "scrapped"
+    a.current_market_value = Decimal("0")
 
     write_audit(
         db,
@@ -1463,6 +1546,37 @@ def scrap_asset(
         entity_id=a.id,
         old={"status": old_status},
         new={"status": "scrapped"},
+        ip=client_ip(request),
+    )
+    db.commit()
+    db.refresh(a)
+    return _to_asset_out(a)
+
+
+@router.post("/assets/{asset_id}/unscrap", response_model=AssetOut)
+def unscrap_asset(
+    asset_id: uuid.UUID,
+    request: Request,
+    db: Session = Depends(get_db),
+    me: User = Depends(require_permission("product.update")),
+):
+    """Hurdaya ayrılmış tekil seri numaralı cihazı tekrar depoya/envantere kazandırır."""
+    a = db.get(Asset, asset_id)
+    if not a or a.tenant_id != me.tenant_id or a.is_deleted:
+        raise HTTPException(404, "Cihaz bulunamadı.")
+
+    old_status = a.status
+    a.status = "in_warehouse"
+
+    write_audit(
+        db,
+        tenant_id=me.tenant_id,
+        user_id=me.id,
+        action="asset.unscrap",
+        entity="asset",
+        entity_id=a.id,
+        old={"status": old_status},
+        new={"status": "in_warehouse"},
         ip=client_ip(request),
     )
     db.commit()
@@ -1521,6 +1635,8 @@ def inventory_summary(
     market_by_currency: dict[str, Decimal] = {"TRY": Decimal("0"), "USD": Decimal("0"), "EUR": Decimal("0")}
 
     for a in assets:
+        if a.status == "scrapped":
+            continue
         if a.purchase_price is not None:
             c = a.purchase_currency if a.purchase_currency in cost_by_currency else "TRY"
             cost_by_currency[c] += a.purchase_price
@@ -1529,6 +1645,8 @@ def inventory_summary(
             market_by_currency[mc] += a.current_market_value
 
     for p in products:
+        if p.status == "scrapped":
+            continue
         if p.tracking_type == "quantity":
             if p.purchase_price is not None:
                 c = p.purchase_currency if p.purchase_currency in cost_by_currency else "TRY"
@@ -1582,9 +1700,21 @@ def inventory_summary(
         )
     ) or Decimal("0")
 
+    # 4. Hurdaya ayrılmış adetli ürünler
+    scrapped_prod_units = db.scalar(
+        select(func.coalesce(func.sum(Product.quantity), 0)).where(
+            Product.tenant_id == me.tenant_id,
+            Product.is_deleted.is_(False),
+            Product.is_active.is_(True),
+            Product.tracking_type == "quantity",
+            Product.status == "scrapped",
+        )
+    ) or Decimal("0")
+
     status_counts["in_warehouse"] += int(wh_units)
     status_counts["assigned"] += int(asg_units)
     status_counts["in_project"] += int(proj_units)
+    status_counts["scrapped"] += int(scrapped_prod_units)
 
     cat_distribution: dict[str, int] = {}
     for p in products:

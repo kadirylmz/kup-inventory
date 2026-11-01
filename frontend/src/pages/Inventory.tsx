@@ -16,6 +16,7 @@ import {
   Package,
   Plus,
   QrCode,
+  RotateCcw,
   Search,
   Send,
   Sparkles,
@@ -555,7 +556,7 @@ export default function InventoryPage() {
   const handleScrapProduct = async (p: ProductItem) => {
     if (
       !window.confirm(
-        `"${p.name}" (${p.inventory_code}) ürününü ve varsa bağlı tüm cihazlarını HURDAYA ayırmak istediğinize emin misiniz?`
+        `"${p.name}" (${p.inventory_code}) ürününü ve varsa bağlı tüm cihazlarını HURDAYA ayırmak istediğinize emin misiniz?\n\n(Hurdaya ayrıldığında ürünün piyasa değeri sıfırlanır ve depodan düşer. İstenirse tekrar envantere geri döndürülebilir.)`
       )
     ) {
       return
@@ -564,7 +565,27 @@ export default function InventoryPage() {
       await api(`/products/${p.id}/scrap`, { method: 'POST' })
       toast.success(`"${p.name}" başarıyla hurdaya ayrıldı.`)
       if (selectedProduct?.id === p.id) {
-        setSelectedProduct({ ...selectedProduct, status: 'scrapped' })
+        setSelectedProduct({ ...selectedProduct, status: 'scrapped', current_market_value: '0' })
+      }
+      refreshAll()
+    } catch (err) {
+      toast.error((err as Error).message)
+    }
+  }
+
+  const handleUnscrapProduct = async (p: ProductItem) => {
+    if (
+      !window.confirm(
+        `"${p.name}" (${p.inventory_code}) hurda kaydını tekrar AKTİF ENVANTERE / DEPOYA geri kazandırmak istediğinize emin misiniz?`
+      )
+    ) {
+      return
+    }
+    try {
+      await api(`/products/${p.id}/unscrap`, { method: 'POST' })
+      toast.success(`"${p.name}" tekrar depoya ve envantere eklendi.`)
+      if (selectedProduct?.id === p.id) {
+        setSelectedProduct({ ...selectedProduct, status: 'in_warehouse' })
       }
       refreshAll()
     } catch (err) {
@@ -625,7 +646,7 @@ export default function InventoryPage() {
   const handleScrapAsset = async (a: AssetItem) => {
     if (
       !window.confirm(
-        `${a.serial_number} (${a.inventory_code}) seri numaralı cihazı HURDAYA ayırmak istediğinize emin misiniz?`
+        `${a.serial_number} (${a.inventory_code}) seri numaralı cihazı HURDAYA ayırmak istediğinize emin misiniz?\n\n(Cihazın piyasa değeri sıfırlanır ve hurdaya aktarılır.)`
       )
     ) {
       return
@@ -633,6 +654,23 @@ export default function InventoryPage() {
     try {
       await api(`/assets/${a.id}/scrap`, { method: 'POST' })
       toast.success(`${a.serial_number} hurdaya ayrıldı.`)
+      refreshAll()
+    } catch (err) {
+      toast.error((err as Error).message)
+    }
+  }
+
+  const handleUnscrapAsset = async (a: AssetItem) => {
+    if (
+      !window.confirm(
+        `${a.serial_number} (${a.inventory_code}) hurda cihazını tekrar AKTİF ENVANTERE / DEPOYA geri kazandırmak istediğinize emin misiniz?`
+      )
+    ) {
+      return
+    }
+    try {
+      await api(`/assets/${a.id}/unscrap`, { method: 'POST' })
+      toast.success(`${a.serial_number} tekrar depoya ve envantere eklendi.`)
       refreshAll()
     } catch (err) {
       toast.error((err as Error).message)
@@ -1065,14 +1103,24 @@ export default function InventoryPage() {
                             >
                               <Eye className="h-3.5 w-3.5" />
                             </button>
-                            {can('product.update') && p.status !== 'scrapped' && (
-                              <button
-                                onClick={() => handleScrapProduct(p)}
-                                title="Hurdaya Ayır"
-                                className="inline-flex items-center gap-1 rounded-lg border border-amber-200 bg-amber-50/60 px-2 py-1 text-xs font-semibold text-amber-700 hover:bg-amber-100 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-300"
-                              >
-                                <Flame className="h-3.5 w-3.5" /> Hurdaya
-                              </button>
+                            {can('product.update') && (
+                              p.status === 'scrapped' ? (
+                                <button
+                                  onClick={() => handleUnscrapProduct(p)}
+                                  title="Hurdayı Envantere Geri Al"
+                                  className="inline-flex items-center gap-1 rounded-lg border border-emerald-300 bg-emerald-50 px-2 py-1 text-xs font-semibold text-emerald-700 hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300"
+                                >
+                                  <RotateCcw className="h-3.5 w-3.5" /> Envantere Al
+                                </button>
+                              ) : (
+                                <button
+                                  onClick={() => handleScrapProduct(p)}
+                                  title="Hurdaya Ayır"
+                                  className="inline-flex items-center gap-1 rounded-lg border border-amber-200 bg-amber-50/60 px-2 py-1 text-xs font-semibold text-amber-700 hover:bg-amber-100 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-300"
+                                >
+                                  <Flame className="h-3.5 w-3.5" /> Hurdaya
+                                </button>
+                              )
                             )}
                             {can('product.delete') && (
                               <button
@@ -1208,14 +1256,24 @@ export default function InventoryPage() {
                             >
                               <QrCode className="h-3.5 w-3.5" /> QR
                             </button>
-                            {can('product.update') && a.status !== 'scrapped' && (
-                              <button
-                                onClick={() => handleScrapAsset(a)}
-                                title="Hurdaya Ayır"
-                                className="inline-flex items-center gap-1 rounded-lg border border-amber-200 bg-amber-50/60 px-2 py-1 text-xs font-semibold text-amber-700 hover:bg-amber-100 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-300"
-                              >
-                                <Flame className="h-3.5 w-3.5" /> Hurdaya
-                              </button>
+                            {can('product.update') && (
+                              a.status === 'scrapped' ? (
+                                <button
+                                  onClick={() => handleUnscrapAsset(a)}
+                                  title="Hurdayı Envantere Geri Al"
+                                  className="inline-flex items-center gap-1 rounded-lg border border-emerald-300 bg-emerald-50 px-2 py-1 text-xs font-semibold text-emerald-700 hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300"
+                                >
+                                  <RotateCcw className="h-3.5 w-3.5" /> Envantere Al
+                                </button>
+                              ) : (
+                                <button
+                                  onClick={() => handleScrapAsset(a)}
+                                  title="Hurdaya Ayır"
+                                  className="inline-flex items-center gap-1 rounded-lg border border-amber-200 bg-amber-50/60 px-2 py-1 text-xs font-semibold text-amber-700 hover:bg-amber-100 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-300"
+                                >
+                                  <Flame className="h-3.5 w-3.5" /> Hurdaya
+                                </button>
+                              )
                             )}
                             {can('product.delete') && (
                               <button
@@ -1927,13 +1985,22 @@ export default function InventoryPage() {
                 </p>
               </div>
               <div className="flex items-center gap-2">
-                {can('product.update') && selectedProduct.status !== 'scrapped' && (
-                  <button
-                    onClick={() => handleScrapProduct(selectedProduct)}
-                    className="flex items-center gap-1 rounded-lg border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-700 hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-950/50 dark:text-amber-300"
-                  >
-                    <Flame className="h-3.5 w-3.5" /> Hurdaya Ayır
-                  </button>
+                {can('product.update') && (
+                  selectedProduct.status === 'scrapped' ? (
+                    <button
+                      onClick={() => handleUnscrapProduct(selectedProduct)}
+                      className="flex items-center gap-1 rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300"
+                    >
+                      <RotateCcw className="h-3.5 w-3.5" /> Envantere Al
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => handleScrapProduct(selectedProduct)}
+                      className="flex items-center gap-1 rounded-lg border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-700 hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-950/50 dark:text-amber-300"
+                    >
+                      <Flame className="h-3.5 w-3.5" /> Hurdaya Ayır
+                    </button>
+                  )
                 )}
                 {can('product.update') && (
                   <button
@@ -2198,13 +2265,22 @@ export default function InventoryPage() {
                                 >
                                   QR
                                 </button>
-                                {can('product.update') && a.status !== 'scrapped' && (
-                                  <button
-                                    onClick={() => handleScrapAsset(a)}
-                                    className="font-semibold text-amber-600 hover:underline"
-                                  >
-                                    Hurdaya
-                                  </button>
+                                {can('product.update') && (
+                                  a.status === 'scrapped' ? (
+                                    <button
+                                      onClick={() => handleUnscrapAsset(a)}
+                                      className="font-semibold text-emerald-600 hover:underline"
+                                    >
+                                      Envantere Al
+                                    </button>
+                                  ) : (
+                                    <button
+                                      onClick={() => handleScrapAsset(a)}
+                                      className="font-semibold text-amber-600 hover:underline"
+                                    >
+                                      Hurdaya
+                                    </button>
+                                  )
                                 )}
                                 {can('product.delete') && (
                                   <button

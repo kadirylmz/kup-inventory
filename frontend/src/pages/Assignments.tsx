@@ -146,8 +146,31 @@ export default function AssignmentsPage() {
       qc.invalidateQueries({ queryKey: ['products'] })
       qc.invalidateQueries({ queryKey: ['employees'] })
       qc.invalidateQueries({ queryKey: ['assets'] })
+      qc.invalidateQueries({ queryKey: ['warehouse-stock'] })
       qc.invalidateQueries({ queryKey: ['movements'] })
       setReturnModal(null)
+    } catch (err) {
+      toast.error((err as Error).message)
+    }
+  }
+
+  const handleDeleteAssignment = async (asg: AssignmentRecord) => {
+    if (
+      !window.confirm(
+        `"${asg.assignment_no}" numaralı zimmet fişini silmek istediğinize emin misiniz?\n\nİade edilmemiş tüm malzemeler otomatik olarak depoya geri aktarılacaktır.`,
+      )
+    ) {
+      return
+    }
+    try {
+      await api(`/assignments/${asg.id}`, { method: 'DELETE' })
+      toast.success(`${asg.assignment_no} numaralı zimmet fişi silindi ve malzemeler depoya döndürüldü.`)
+      qc.invalidateQueries({ queryKey: ['assignments'] })
+      qc.invalidateQueries({ queryKey: ['products'] })
+      qc.invalidateQueries({ queryKey: ['employees'] })
+      qc.invalidateQueries({ queryKey: ['assets'] })
+      qc.invalidateQueries({ queryKey: ['warehouse-stock'] })
+      qc.invalidateQueries({ queryKey: ['movements'] })
     } catch (err) {
       toast.error((err as Error).message)
     }
@@ -223,12 +246,23 @@ export default function AssignmentsPage() {
                     </div>
                   </div>
 
-                  <button
-                    onClick={() => setPrintRecord(asg)}
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800"
-                  >
-                    <FileText className="h-4 w-4 text-brand-600" /> Zimmet Belgesi (PDF / Yazdır)
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setPrintRecord(asg)}
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800"
+                    >
+                      <FileText className="h-4 w-4 text-brand-600" /> Zimmet Belgesi (PDF / Yazdır)
+                    </button>
+                    {can('assignment.manage') && (
+                      <button
+                        onClick={() => handleDeleteAssignment(asg)}
+                        title="Zimmet Fişini Sil (Depoya İade Et)"
+                        className="inline-flex items-center gap-1 rounded-lg border border-rose-200 bg-rose-50/60 px-2.5 py-1.5 text-xs font-semibold text-rose-600 hover:bg-rose-100 dark:border-rose-900/40 dark:bg-rose-950/30 dark:text-rose-400"
+                      >
+                        <Trash2 className="h-4 w-4" /> Sil
+                      </button>
+                    )}
+                  </div>
                 </div>
 
                 {/* Kalemler */}

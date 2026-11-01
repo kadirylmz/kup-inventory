@@ -1474,3 +1474,65 @@ def return_assignment_item(
         for d in db.scalars(select(Department).where(Department.tenant_id == me.tenant_id)).all()
     }
     return _to_assignment_out(asg, dept_map)
+
+
+@router.delete("/assignments/{assignment_id}", status_code=204)
+def delete_assignment(
+    assignment_id: uuid.UUID,
+    request: Request,
+    db: Session = Depends(get_db),
+    me: User = Depends(require_permission("assignment.manage")),
+):
+    """
+    Zimmet fişini iptal eder / siler.
+    Henüz iade edilmemiş aktif kalemler varsa stoklarını depoya geri iade eder.
+    """
+    asg = db.get(Assignment, assignment_id)
+    if not asg or asg.tenant_id != me.tenant_id or asg.is_deleted:
+        raise HTTPException(404, "Zimmet kaydı bulunamadı.")
+
+    # Varsayılan depo (iade edilmemişlerin geri döneceği depo)
+    def_wh = db.scalar(
+        select(Warehouse).where(
+            Warehouse.tenant_id == me.tenant_id,
+            Warehouse.is_deleted.is_(False),
+            Warehouse.code == "WH-CENTRAL",
+        )
+    ) or db.scalar(
+        select(Warehouse).where(
+            Warehouse.tenant_id == me.tenant_id,
+            Warehouse.is_deleted.is_(False),
+        ).order_by(Warehouse.created_at.asc())
+    )
+
+    for item in asg.items:
+        if not item.is_returned:
+            rem = item.quantity - item.returned_quantity
+            if rem > 0:
+                if item.asset:
+                    item.asset.status = "in_warehouse"
+                    item.asset.assigned_employee_name = None
+                    if def_wh:
+                        item.asset.warehouse_name = def_wh.name
+                elif item.product and def_wh:
+                    _adjust_balance(db, me.tenant_id, item.product, def_wh.id, None, rem)
+                    if (item.product.quantity or Decimal("0")) > 0 and item.product.status == "assigned":
+                        item.product.status = "in_warehouse"
+            item.is_returned = True
+            item.returned_at = datetime.now(timezone.utc)
+
+    asg.is_deleted = True
+    asg.deleted_at = datetime.now(timezone.utc)
+
+    write_audit(
+        db,
+        tenant_id=me.tenant_id,
+        user_id=me.id,
+        action="assignment.delete",
+        entity="assignment",
+        entity_id=asg.id,
+        new={"assignment_no": asg.assignment_no, "status": "deleted"},
+        ip=client_ip(request),
+    )
+    db.commit()
+    return None

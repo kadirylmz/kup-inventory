@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Loader2, Plus, Shield, Users, UserX, X } from 'lucide-react'
+import { Edit3, Loader2, Plus, Shield, Trash2, Users, UserX, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { api } from '@/lib/api'
 import { useAuth } from '@/lib/auth'
@@ -22,16 +22,21 @@ interface UserItem {
 }
 
 export default function UsersPage() {
-  const { can } = useAuth()
+  const { me, can } = useAuth()
   const qc = useQueryClient()
   const [tab, setTab] = useState<'users' | 'roles'>('users')
   const [openModal, setOpenModal] = useState(false)
+  const [editingUser, setEditingUser] = useState<UserItem | null>(null)
 
   const [email, setEmail] = useState('')
   const [fullName, setFullName] = useState('')
   const [password, setPassword] = useState('')
   const [selectedRoleIds, setSelectedRoleIds] = useState<string[]>([])
   const [busy, setBusy] = useState(false)
+
+  // Rol Yetki Düzenleme Modalı
+  const [editingRole, setEditingRole] = useState<RoleItem | null>(null)
+  const [rolePerms, setRolePerms] = useState<string[]>([])
 
   const { data: users = [], isLoading: uLoad } = useQuery({
     queryKey: ['users'],
@@ -45,8 +50,33 @@ export default function UsersPage() {
     enabled: can('role.view'),
   })
 
+  const { data: allPermissions = [] } = useQuery({
+    queryKey: ['permissions'],
+    queryFn: () => api<string[]>('/permissions'),
+    enabled: can('role.view'),
+  })
+
   if (!can('user.view')) {
     return <p className="text-slate-500">Bu sayfayı görüntüleme yetkiniz yok.</p>
+  }
+
+  const openCreateUserModal = () => {
+    setEditingUser(null)
+    setEmail('')
+    setFullName('')
+    setPassword('')
+    const techRole = roles.find(r => r.code === 'TECHNICIAN')
+    setSelectedRoleIds(techRole ? [techRole.id] : [])
+    setOpenModal(true)
+  }
+
+  const openEditUserModal = (u: UserItem) => {
+    setEditingUser(u)
+    setEmail(u.email)
+    setFullName(u.full_name)
+    setPassword('')
+    setSelectedRoleIds(u.roles.map(r => r.id))
+    setOpenModal(true)
   }
 
   const toggleActive = async (u: UserItem) => {
@@ -62,30 +92,72 @@ export default function UsersPage() {
     }
   }
 
-  const createUser = async (e: FormEvent) => {
+  const handleDeleteUser = async (u: UserItem) => {
+    if (u.id === me?.id) {
+      toast.error('Kendi hesabınızı silemezsiniz.')
+      return
+    }
+    if (!window.confirm(`"${u.full_name}" (${u.email}) kullanıcısını silmek istediğinize emin misiniz?`)) {
+      return
+    }
+    try {
+      await api(`/users/${u.id}`, { method: 'DELETE' })
+      toast.success('Kullanıcı silindi.')
+      qc.invalidateQueries({ queryKey: ['users'] })
+    } catch (e) {
+      toast.error((e as Error).message)
+    }
+  }
+
+  const saveUser = async (e: FormEvent) => {
     e.preventDefault()
     setBusy(true)
     try {
-      await api('/users', {
-        method: 'POST',
-        body: JSON.stringify({
-          email,
-          full_name: fullName,
-          password,
-          role_ids: selectedRoleIds,
-        }),
-      })
-      toast.success('Yeni kullanıcı oluşturuldu.')
+      if (editingUser) {
+        await api(`/users/${editingUser.id}`, {
+          method: 'PATCH',
+          body: JSON.stringify({
+            full_name: fullName,
+            role_ids: selectedRoleIds,
+            password: password ? password : null,
+          }),
+        })
+        toast.success('Kullanıcı bilgileri ve rolleri güncellendi.')
+      } else {
+        await api('/users', {
+          method: 'POST',
+          body: JSON.stringify({
+            email,
+            full_name: fullName,
+            password,
+            role_ids: selectedRoleIds,
+          }),
+        })
+        toast.success('Yeni kullanıcı oluşturuldu.')
+      }
       qc.invalidateQueries({ queryKey: ['users'] })
       setOpenModal(false)
-      setEmail('')
-      setFullName('')
-      setPassword('')
-      setSelectedRoleIds([])
+      setEditingUser(null)
     } catch (err) {
       toast.error((err as Error).message)
     } finally {
       setBusy(false)
+    }
+  }
+
+  const saveRolePermissions = async (e: FormEvent) => {
+    e.preventDefault()
+    if (!editingRole) return
+    try {
+      await api(`/roles/${editingRole.id}/permissions`, {
+        method: 'PUT',
+        body: JSON.stringify({ permission_codes: rolePerms }),
+      })
+      toast.success(`${editingRole.name} rol yetkileri güncellendi.`)
+      setEditingRole(null)
+      qc.invalidateQueries({ queryKey: ['roles'] })
+    } catch (err) {
+      toast.error((err as Error).message)
     }
   }
 
@@ -98,12 +170,12 @@ export default function UsersPage() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Kullanıcılar ve Yetki Rolleri</h1>
           <p className="text-sm text-slate-500">
-            Rol bazlı erişim kontrolü (RBAC) ve sistem kullanıcı hesapları
+            Rol bazlı erişim kontrolü (RBAC), teknisyen kısıtlamaları ve sistem kullanıcı hesapları
           </p>
         </div>
         {can('user.manage') && (
           <button
-            onClick={() => setOpenModal(true)}
+            onClick={openCreateUserModal}
             className="flex items-center gap-2 rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700"
           >
             <Plus className="h-4 w-4" /> Yeni Kullanıcı Ekle
@@ -185,12 +257,31 @@ export default function UsersPage() {
                     </td>
                     <td className="p-3.5 text-right">
                       {can('user.manage') && (
-                        <button
-                          onClick={() => toggleActive(u)}
-                          className="text-xs font-medium text-brand-600 hover:underline"
-                        >
-                          {u.is_active ? 'Pasifleştir' : 'Aktifleştir'}
-                        </button>
+                        <div className="inline-flex items-center gap-1.5">
+                          <button
+                            onClick={() => openEditUserModal(u)}
+                            className="inline-flex items-center gap-1 rounded border border-slate-200 px-2.5 py-1 text-xs font-medium hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800"
+                          >
+                            <Edit3 className="h-3.5 w-3.5" /> Düzenle
+                          </button>
+                          {u.id !== me?.id && (
+                            <>
+                              <button
+                                onClick={() => toggleActive(u)}
+                                className="rounded border border-slate-200 px-2.5 py-1 text-xs font-medium text-brand-600 hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800"
+                              >
+                                {u.is_active ? 'Pasifleştir' : 'Aktifleştir'}
+                              </button>
+                              <button
+                                onClick={() => handleDeleteUser(u)}
+                                title="Kullanıcıyı Sil"
+                                className="inline-flex items-center gap-1 rounded border border-rose-200 px-2 py-1 text-xs font-medium text-rose-600 hover:bg-rose-50 dark:border-rose-900/50 dark:hover:bg-rose-950/40"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" /> Sil
+                              </button>
+                            </>
+                          )}
+                        </div>
                       )}
                     </td>
                   </tr>
@@ -217,10 +308,28 @@ export default function UsersPage() {
                       {r.code}
                     </span>
                     <h3 className="text-base font-bold">{r.name}</h3>
+                    {r.code === 'TECHNICIAN' && (
+                      <p className="text-xs text-emerald-600 dark:text-emerald-400">
+                        Sadece Envanter görüntüleme ve yeni ürün/cihaz ekleme yetkisi vardır.
+                      </p>
+                    )}
                   </div>
-                  <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs dark:bg-slate-800">
-                    {r.permissions.length} yetki
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs dark:bg-slate-800">
+                      {r.permissions.length} yetki
+                    </span>
+                    {can('role.manage') && r.code !== 'ADMIN' && (
+                      <button
+                        onClick={() => {
+                          setEditingRole(r)
+                          setRolePerms(r.permissions)
+                        }}
+                        className="inline-flex items-center gap-1 rounded border border-slate-200 px-2 py-1 text-xs font-medium hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800"
+                      >
+                        <Edit3 className="h-3 w-3" /> Yetkileri Düzenle
+                      </button>
+                    )}
+                  </div>
                 </div>
                 <div className="mt-3 flex flex-wrap gap-1.5">
                   {r.permissions.map(p => (
@@ -238,14 +347,17 @@ export default function UsersPage() {
         </div>
       )}
 
+      {/* Kullanıcı Oluştur / Düzenle Modalı */}
       {openModal && (
         <div className="fixed inset-0 z-50 grid place-items-center bg-black/50 p-4">
           <form
-            onSubmit={createUser}
+            onSubmit={saveUser}
             className="w-full max-w-md space-y-4 rounded-2xl bg-white p-6 shadow-xl dark:bg-slate-900"
           >
             <div className="flex items-center justify-between">
-              <h2 className="text-lg font-bold">Yeni Kullanıcı Oluştur</h2>
+              <h2 className="text-lg font-bold">
+                {editingUser ? `Kullanıcıyı Düzenle (${editingUser.email})` : 'Yeni Kullanıcı Oluştur'}
+              </h2>
               <button type="button" onClick={() => setOpenModal(false)}>
                 <X className="h-5 w-5 text-slate-400" />
               </button>
@@ -264,29 +376,34 @@ export default function UsersPage() {
               <input
                 type="email"
                 required
+                disabled={!!editingUser}
                 value={email}
                 onChange={e => setEmail(e.target.value)}
-                className={inputCls + ' mt-1'}
-                placeholder="kullanici@kup.local"
+                className={inputCls + ' mt-1 disabled:opacity-60'}
+                placeholder="teknisyen@kup.local"
               />
             </label>
             <label className="block text-sm font-medium">
-              Parola (En az 10 karakter, harf + rakam) *
+              {editingUser
+                ? 'Yeni Parola (Değiştirmek istemiyorsanız boş bırakın)'
+                : 'Parola (En az 10 karakter, harf + rakam) *'}
               <input
                 type="password"
-                required
+                required={!editingUser}
                 minLength={10}
                 value={password}
                 onChange={e => setPassword(e.target.value)}
                 className={inputCls + ' mt-1'}
+                placeholder={editingUser ? '••••••••••' : 'Örn: Teknisyen2026!'}
               />
             </label>
             <div className="space-y-1.5">
               <div className="text-sm font-medium">Roller</div>
               {roles.map(r => (
-                <label key={r.id} className="flex items-center gap-2 text-sm">
+                <label key={r.id} className="flex items-start gap-2 text-sm">
                   <input
                     type="checkbox"
+                    className="mt-1"
                     checked={selectedRoleIds.includes(r.id)}
                     onChange={e =>
                       setSelectedRoleIds(
@@ -296,9 +413,15 @@ export default function UsersPage() {
                       )
                     }
                   />
-                  <span>
-                    {r.name} <span className="text-xs text-slate-400">({r.code})</span>
-                  </span>
+                  <div>
+                    <span className="font-medium">{r.name}</span>{' '}
+                    <span className="text-xs text-slate-400">({r.code})</span>
+                    {r.code === 'TECHNICIAN' && (
+                      <div className="text-[11px] text-slate-500">
+                        Yalnızca Envanter sekmesini görür ve ürün/cihaz ekleyebilir; diğer alanlara giremez.
+                      </div>
+                    )}
+                  </div>
                 </label>
               ))}
             </div>
@@ -314,7 +437,58 @@ export default function UsersPage() {
                 disabled={busy}
                 className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white"
               >
-                Oluştur
+                {editingUser ? 'Güncelle' : 'Oluştur'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* Rol Yetkilerini Düzenle Modalı */}
+      {editingRole && (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-black/50 p-4">
+          <form
+            onSubmit={saveRolePermissions}
+            className="w-full max-w-2xl space-y-4 rounded-2xl bg-white p-6 shadow-xl dark:bg-slate-900"
+          >
+            <div className="flex items-center justify-between border-b border-slate-200 pb-3 dark:border-slate-800">
+              <div>
+                <h2 className="text-lg font-bold">{editingRole.name} ({editingRole.code}) Yetkileri</h2>
+                <p className="text-xs text-slate-500">Bu role sahip kullanıcıların erişebileceği modül ve işlemleri seçin</p>
+              </div>
+              <button type="button" onClick={() => setEditingRole(null)}>
+                <X className="h-5 w-5 text-slate-400" />
+              </button>
+            </div>
+            <div className="grid max-h-96 grid-cols-2 gap-2 overflow-y-auto p-1 sm:grid-cols-3">
+              {allPermissions.map(code => (
+                <label
+                  key={code}
+                  className="flex items-center gap-2 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs dark:border-slate-800"
+                >
+                  <input
+                    type="checkbox"
+                    checked={rolePerms.includes(code)}
+                    onChange={e =>
+                      setRolePerms(
+                        e.target.checked ? [...rolePerms, code] : rolePerms.filter(c => c !== code),
+                      )
+                    }
+                  />
+                  <span className="font-mono">{code}</span>
+                </label>
+              ))}
+            </div>
+            <div className="flex justify-end gap-2 border-t border-slate-200 pt-3 dark:border-slate-800">
+              <button
+                type="button"
+                onClick={() => setEditingRole(null)}
+                className="rounded-lg border border-slate-300 px-4 py-2 text-sm dark:border-slate-700"
+              >
+                İptal
+              </button>
+              <button className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white">
+                Yetkileri Kaydet
               </button>
             </div>
           </form>

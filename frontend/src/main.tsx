@@ -1,6 +1,6 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
-import { BrowserRouter, Route, Routes } from 'react-router-dom'
+import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Loader2 } from 'lucide-react'
 import { Toaster } from 'sonner'
@@ -31,31 +31,31 @@ import SystemLicensePage from '@/pages/SystemLicense'
 const qc = new QueryClient({ defaultOptions: { queries: { retry: false, refetchOnWindowFocus: false } } })
 
 function Gate() {
-  const { me, loading } = useAuth()
+  const { me, loading, can } = useAuth()
   if (loading) return <div className="grid h-screen place-items-center"><Loader2 className="animate-spin" /></div>
   if (!me) return <Login />
   return (
     <Routes>
       <Route element={<Layout />}>
-        <Route path="/" element={<DashboardPage />} />
+        <Route path="/" element={can('dashboard.view') ? <DashboardPage /> : <Navigate to="/envanter" replace />} />
         <Route path="/envanter" element={<InventoryPage />} />
-        <Route path="/kategoriler" element={<CategoriesPage />} />
-        <Route path="/markalar" element={<BrandsModelsPage />} />
-        <Route path="/depolar" element={<WarehousesPage />} />
-        <Route path="/hareketler" element={<MovementsPage />} />
-        <Route path="/projeler" element={<ProjectsPage />} />
-        <Route path="/personel" element={<EmployeesPage />} />
-        <Route path="/zimmetler" element={<AssignmentsPage />} />
-        <Route path="/lisanslar" element={<LicensesPage />} />
-        <Route path="/bakim" element={<MaintenancePage />} />
-        <Route path="/sayim" element={<StocktakePage />} />
-        <Route path="/degerleme" element={<ValuationsPage />} />
-        <Route path="/raporlar" element={<ReportsPage />} />
-        <Route path="/bildirimler" element={<NotificationsPage />} />
-        <Route path="/islem-gecmisi" element={<AuditLogsPage />} />
-        <Route path="/kullanicilar" element={<UsersPage />} />
-        <Route path="/ayarlar" element={<SettingsBackupsPage />} />
-        <Route path="/sistem-lisansi" element={<SystemLicensePage />} />
+        <Route path="/kategoriler" element={can('category.view') ? <CategoriesPage /> : <Navigate to="/envanter" replace />} />
+        <Route path="/markalar" element={can('brand.view') ? <BrandsModelsPage /> : <Navigate to="/envanter" replace />} />
+        <Route path="/depolar" element={can('warehouse.view') ? <WarehousesPage /> : <Navigate to="/envanter" replace />} />
+        <Route path="/hareketler" element={can('movement.view') ? <MovementsPage /> : <Navigate to="/envanter" replace />} />
+        <Route path="/projeler" element={can('project.view') ? <ProjectsPage /> : <Navigate to="/envanter" replace />} />
+        <Route path="/personel" element={can('employee.view') ? <EmployeesPage /> : <Navigate to="/envanter" replace />} />
+        <Route path="/zimmetler" element={can('assignment.view') ? <AssignmentsPage /> : <Navigate to="/envanter" replace />} />
+        <Route path="/lisanslar" element={can('license.view') ? <LicensesPage /> : <Navigate to="/envanter" replace />} />
+        <Route path="/bakim" element={can('maintenance.view') ? <MaintenancePage /> : <Navigate to="/envanter" replace />} />
+        <Route path="/sayim" element={can('stocktake.view') ? <StocktakePage /> : <Navigate to="/envanter" replace />} />
+        <Route path="/degerleme" element={can('valuation.view') ? <ValuationsPage /> : <Navigate to="/envanter" replace />} />
+        <Route path="/raporlar" element={can('report.view') ? <ReportsPage /> : <Navigate to="/envanter" replace />} />
+        <Route path="/bildirimler" element={can('notification.view') ? <NotificationsPage /> : <Navigate to="/envanter" replace />} />
+        <Route path="/islem-gecmisi" element={can('audit.view') ? <AuditLogsPage /> : <Navigate to="/envanter" replace />} />
+        <Route path="/kullanicilar" element={can('user.view') ? <UsersPage /> : <Navigate to="/envanter" replace />} />
+        <Route path="/ayarlar" element={can('setting.view') ? <SettingsBackupsPage /> : <Navigate to="/envanter" replace />} />
+        <Route path="/sistem-lisansi" element={can('app_license.view') ? <SystemLicensePage /> : <Navigate to="/envanter" replace />} />
       </Route>
     </Routes>
   )

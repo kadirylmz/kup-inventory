@@ -229,6 +229,7 @@ export default function InventoryPage() {
   const { data: projects = [] } = useQuery({
     queryKey: ['projects'],
     queryFn: () => api<ProjectSummary[]>('/projects'),
+    enabled: can('project.view'),
   })
 
   const prodParams = new URLSearchParams()

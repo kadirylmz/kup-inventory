@@ -34,11 +34,26 @@ def create_user(body: UserCreate, request: Request, db: Session = Depends(get_db
     if (msg := validate_password_strength(body.password)):
         raise HTTPException(422, msg)
     email = body.email.lower()
-    if db.scalar(select(User).where(User.tenant_id == me.tenant_id, User.email == email)):
+    existing = db.scalar(select(User).where(User.tenant_id == me.tenant_id, User.email == email))
+    if existing and not existing.is_deleted:
         raise HTTPException(409, "Bu e-posta ile bir kullanıcı zaten var.")
-    u = User(tenant_id=me.tenant_id, email=email, full_name=body.full_name,
-             password_hash=hash_password(body.password), roles=_roles(db, me.tenant_id, body.role_ids))
-    db.add(u)
+    if existing and existing.is_deleted:
+        existing.full_name = body.full_name
+        existing.password_hash = hash_password(body.password)
+        existing.roles = _roles(db, me.tenant_id, body.role_ids)
+        existing.is_deleted = False
+        existing.is_active = True
+        existing.deleted_at = None
+        u = existing
+    else:
+        u = User(
+            tenant_id=me.tenant_id,
+            email=email,
+            full_name=body.full_name,
+            password_hash=hash_password(body.password),
+            roles=_roles(db, me.tenant_id, body.role_ids),
+        )
+        db.add(u)
     db.flush()
     write_audit(db, tenant_id=me.tenant_id, user_id=me.id, action="user.create", entity="user", entity_id=u.id,
                 new={"email": email, "roles": [r.code for r in u.roles]}, ip=client_ip(request))

@@ -52,7 +52,7 @@ router = APIRouter(tags=["inventory"])
 def list_categories(
     include_inactive: bool = False,
     db: Session = Depends(get_db),
-    me: User = Depends(require_permission("category.view")),
+    me: User = Depends(require_permission("product.view")),
 ):
     q = select(Category).where(Category.tenant_id == me.tenant_id, Category.is_deleted.is_(False))
     if not include_inactive:
@@ -144,7 +144,7 @@ def update_category(
 @router.get("/brands", response_model=list[BrandOut])
 def list_brands(
     db: Session = Depends(get_db),
-    me: User = Depends(require_permission("brand.view")),
+    me: User = Depends(require_permission("product.view")),
 ):
     brands = db.scalars(
         select(Brand).where(Brand.tenant_id == me.tenant_id, Brand.is_deleted.is_(False)).order_by(Brand.name)
@@ -254,7 +254,7 @@ def delete_brand(
 def list_models(
     brand_id: uuid.UUID | None = None,
     db: Session = Depends(get_db),
-    me: User = Depends(require_permission("brand.view")),
+    me: User = Depends(require_permission("product.view")),
 ):
     q = select(ProductModel).where(ProductModel.tenant_id == me.tenant_id, ProductModel.is_deleted.is_(False))
     if brand_id:

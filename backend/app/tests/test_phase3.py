@@ -78,7 +78,8 @@ def test_warehouses_transfers_movements_and_assignments(client, admin_headers):
     stock_before = client.get(
         f"/api/v1/warehouses/stock?warehouse_id={central['id']}", headers=admin_headers
     ).json()
-    assert float(stock_before[0]["quantity"]) == 50.0
+    hdmi_stock = next(s for s in stock_before if s["product_id"] == prod["id"])
+    assert float(hdmi_stock["quantity"]) == 50.0
 
     # Transferi onayla -> Merkez Depo 35, Teknik Atölye 15 olmalı
     app_res = client.post(f"/api/v1/transfers/{trf_id}/approve", headers=admin_headers)
@@ -91,7 +92,8 @@ def test_warehouses_transfers_movements_and_assignments(client, admin_headers):
     stock_workshop = client.get(
         f"/api/v1/warehouses/stock?warehouse_id={workshop['id']}", headers=admin_headers
     ).json()
-    assert float(stock_central[0]["quantity"]) == 35.0
+    hdmi_central = next(s for s in stock_central if s["product_id"] == prod["id"])
+    assert float(hdmi_central["quantity"]) == 35.0
     assert float(stock_workshop[0]["quantity"]) == 15.0
 
     # 7. Yanlış işlem için Ters İşlem (Reversal) testi

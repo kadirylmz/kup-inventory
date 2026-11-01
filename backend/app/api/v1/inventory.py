@@ -740,6 +740,48 @@ def create_product(
             )
         )
 
+    # Adet bazlı ürün ise depoda otomatik StockBalance kaydı oluştur (varsayılan: Merkez Depo veya seçilen depo)
+    from app.models.warehouse_assignment import Warehouse, StockBalance, WarehouseLocation
+
+    wh = None
+    if body.warehouse_name:
+        wh = db.scalar(
+            select(Warehouse).where(
+                Warehouse.tenant_id == me.tenant_id,
+                Warehouse.name == body.warehouse_name,
+                Warehouse.is_deleted.is_(False),
+            )
+        )
+    if not wh:
+        wh = db.scalar(
+            select(Warehouse).where(
+                Warehouse.tenant_id == me.tenant_id,
+                Warehouse.is_deleted.is_(False),
+            ).order_by(Warehouse.created_at.asc())
+        )
+    
+    loc = None
+    if wh and body.shelf_section:
+        loc = db.scalar(
+            select(WarehouseLocation).where(
+                WarehouseLocation.tenant_id == me.tenant_id,
+                WarehouseLocation.warehouse_id == wh.id,
+                WarehouseLocation.name == body.shelf_section,
+                WarehouseLocation.is_active.is_(True),
+            )
+        )
+
+    if wh and body.tracking_type == "quantity" and qty > 0:
+        db.add(
+            StockBalance(
+                tenant_id=me.tenant_id,
+                product_id=p.id,
+                warehouse_id=wh.id,
+                location_id=loc.id if loc else None,
+                quantity=qty,
+            )
+        )
+
     write_audit(
         db,
         tenant_id=me.tenant_id,
@@ -825,6 +867,42 @@ def update_product(
 
     for k, v in updates.items():
         setattr(p, k, v)
+
+    # Adet bazlı ürün miktar güncellemesi yapıldıysa veya depodaki StockBalance yoksa senkronize et
+    if p.tracking_type == "quantity":
+        from app.models.warehouse_assignment import Warehouse, StockBalance
+
+        wh = db.scalar(
+            select(Warehouse).where(
+                Warehouse.tenant_id == me.tenant_id,
+                Warehouse.is_deleted.is_(False),
+                Warehouse.name == (p.warehouse_name or "Merkez Depo"),
+            )
+        ) or db.scalar(
+            select(Warehouse).where(
+                Warehouse.tenant_id == me.tenant_id,
+                Warehouse.is_deleted.is_(False),
+            ).order_by(Warehouse.created_at.asc())
+        )
+        if wh:
+            sb = db.scalar(
+                select(StockBalance).where(
+                    StockBalance.tenant_id == me.tenant_id,
+                    StockBalance.product_id == p.id,
+                )
+            )
+            if not sb:
+                if p.quantity > 0:
+                    db.add(
+                        StockBalance(
+                            tenant_id=me.tenant_id,
+                            product_id=p.id,
+                            warehouse_id=wh.id,
+                            quantity=p.quantity,
+                        )
+                    )
+            elif "quantity" in updates:
+                sb.quantity = p.quantity
 
     if attrs is not None:
         p.attributes.clear()

@@ -1,6 +1,10 @@
 import { useState, type FormEvent } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
+  Calendar,
+  CheckCircle2,
+  Clock,
+  Edit2,
   Filter,
   FolderKanban,
   Loader2,
@@ -214,6 +218,94 @@ export default function ProjectsPage() {
     }
   }
 
+  // Proje Düzenleme / Kapatma State
+  const [editModal, setEditModal] = useState<ProjectRecord | null>(null)
+  const [eName, setEName] = useState('')
+  const [eCustomer, setECustomer] = useState('')
+  const [eStart, setEStart] = useState('')
+  const [eEnd, setEEnd] = useState('')
+  const [eManager, setEManager] = useState('')
+  const [eAddress, setEAddress] = useState('')
+  const [eStatus, setEStatus] = useState<ProjectRecord['status']>('active')
+  const [eDesc, setEDesc] = useState('')
+
+  const openEditProject = (p: ProjectRecord) => {
+    setEditModal(p)
+    setEName(p.name)
+    setECustomer(p.customer || '')
+    setEStart(p.start_date || '')
+    setEEnd(p.end_date || '')
+    setEManager(p.manager_name || '')
+    setEAddress(p.address || '')
+    setEStatus(p.status)
+    setEDesc(p.description || '')
+  }
+
+  const submitUpdateProject = async (e: FormEvent) => {
+    e.preventDefault()
+    if (!editModal) return
+    try {
+      await api(`/projects/${editModal.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          name: eName.trim(),
+          customer: eCustomer || null,
+          start_date: eStart || null,
+          end_date: eEnd || null,
+          manager_name: eManager || null,
+          address: eAddress || null,
+          status: eStatus,
+          description: eDesc || null,
+        }),
+      })
+      toast.success('Proje bilgileri ve durumu güncellendi.')
+      qc.invalidateQueries({ queryKey: ['projects'] })
+      setEditModal(null)
+    } catch (err) {
+      toast.error((err as Error).message)
+    }
+  }
+
+  const handleDeleteEquipment = async (item: ProjectAssetLine) => {
+    if (!activeProj) return
+    const rem = Number(item.remaining_in_project)
+    const confirmMsg =
+      rem > 0
+        ? `Bu satır silindiğinde sahada görünen ${fmtQty(rem)} ${item.unit} '${item.product_name}' otomatik olarak depoya geri aktarılacaktır. Silmek istediğinize emin misiniz?`
+        : `'${item.product_name}' hareket kaydını projeden silmek istediğinize emin misiniz?`
+
+    if (!confirm(confirmMsg)) return
+
+    try {
+      await api(`/projects/${activeProj.id}/equipment/${item.id}`, {
+        method: 'DELETE',
+      })
+      toast.success('Proje hareket kaydı başarıyla silindi.')
+      qc.invalidateQueries({ queryKey: ['projects'] })
+      qc.invalidateQueries({ queryKey: ['products'] })
+      qc.invalidateQueries({ queryKey: ['assets'] })
+      qc.invalidateQueries({ queryKey: ['warehouse-stock'] })
+    } catch (err) {
+      toast.error((err as Error).message)
+    }
+  }
+
+  const handleToggleProjectStatus = async (p: ProjectRecord, nextStatus: ProjectRecord['status']) => {
+    try {
+      await api(`/projects/${p.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          status: nextStatus,
+          end_date: nextStatus === 'completed' && !p.end_date ? new Date().toISOString().split('T')[0] : p.end_date,
+        }),
+      })
+      toast.success(nextStatus === 'completed' ? 'Proje başarıyla tamamlandı olarak kapatıldı.' : 'Proje durumu güncellendi.')
+      qc.invalidateQueries({ queryKey: ['projects'] })
+    } catch (err) {
+      toast.error((err as Error).message)
+    }
+  }
+
   const handleMergeEquipment = async () => {
     if (!activeProj) return
     try {
@@ -321,12 +413,19 @@ export default function ProjectsPage() {
           {activeProj && (
             <div className="space-y-4 rounded-xl border border-slate-200 bg-white p-6 dark:border-slate-800 dark:bg-slate-900">
               <div className="flex flex-wrap items-start justify-between gap-4 border-b border-slate-100 pb-4 dark:border-slate-800">
-                <div>
+                <div className="space-y-1">
                   <div className="flex items-center gap-2">
                     <span className="font-mono text-xs font-bold text-brand-600">{activeProj.code}</span>
                     <h2 className="text-xl font-bold">{activeProj.name}</h2>
+                    <span
+                      className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${
+                        PROJ_STATUS[activeProj.status]?.cls || 'bg-slate-100'
+                      }`}
+                    >
+                      {PROJ_STATUS[activeProj.status]?.label || activeProj.status}
+                    </span>
                   </div>
-                  <p className="mt-1 text-xs text-slate-500">
+                  <p className="text-xs text-slate-500">
                     {[
                       activeProj.customer && `Müşteri: ${activeProj.customer}`,
                       activeProj.manager_name && `Sorumlu: ${activeProj.manager_name}`,
@@ -335,10 +434,51 @@ export default function ProjectsPage() {
                       .filter(Boolean)
                       .join(' • ')}
                   </p>
+                  <div className="flex flex-wrap items-center gap-3 pt-1 text-xs text-slate-600 dark:text-slate-400">
+                    <span className="inline-flex items-center gap-1 font-medium">
+                      <Calendar className="h-3.5 w-3.5 text-slate-400" />
+                      Başlama: {activeProj.start_date ? new Date(activeProj.start_date).toLocaleDateString('tr-TR') : 'Belirtilmedi'}
+                    </span>
+                    <span>•</span>
+                    <span className="inline-flex items-center gap-1 font-medium">
+                      <Clock className="h-3.5 w-3.5 text-slate-400" />
+                      Bitiş: {activeProj.end_date ? new Date(activeProj.end_date).toLocaleDateString('tr-TR') : 'Devam Ediyor (Belirtilmedi)'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Hızlı Proje Durum / Kapatma ve Düzenleme Butonları */}
+                <div className="flex flex-wrap items-center gap-2 print:hidden">
+                  {can('project.manage') && (
+                    <>
+                      <button
+                        onClick={() => openEditProject(activeProj)}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-xs hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                      >
+                        <Edit2 className="h-3.5 w-3.5 text-slate-500" /> Projeyi Düzenle / Tarihler
+                      </button>
+
+                      {activeProj.status !== 'completed' ? (
+                        <button
+                          onClick={() => handleToggleProjectStatus(activeProj, 'completed')}
+                          className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white shadow-xs hover:bg-emerald-700"
+                        >
+                          <CheckCircle2 className="h-3.5 w-3.5" /> Projeyi Tamamla / Kapat
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => handleToggleProjectStatus(activeProj, 'active')}
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-indigo-300 bg-indigo-50 px-3 py-1.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-100 dark:border-indigo-800 dark:bg-indigo-950/40 dark:text-indigo-300"
+                        >
+                          <RotateCcw className="h-3.5 w-3.5" /> Projeyi Tekrar Aç
+                        </button>
+                      )}
+                    </>
+                  )}
                 </div>
 
                 {/* Proje Finansal ve Miktar Özeti */}
-                <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                <div className="grid w-full grid-cols-2 gap-3 sm:grid-cols-4">
                   <div className="rounded-lg bg-slate-50 px-3.5 py-2 dark:bg-slate-800">
                     <div className="text-[11px] text-slate-500">Gönderilen / Sahada / İade</div>
                     <div className="text-sm font-bold">
@@ -430,12 +570,12 @@ export default function ProjectsPage() {
                           <th className="p-3">Toplam Alış Maliyeti</th>
                           <th className="p-3">Toplam Piyasa Değeri</th>
                           <th className="p-3">Durum</th>
-                          <th className="p-3 text-right print:hidden">İade İşlemi</th>
+                          <th className="p-3 text-right print:hidden">İşlemler</th>
                         </tr>
                       </thead>
                       <tbody>
                         {filteredEquipment.map(eq => (
-                          <tr key={eq.id} className="border-t border-slate-100 dark:border-slate-800">
+                          <tr key={eq.id} className="border-t border-slate-100 hover:bg-slate-50/50 dark:border-slate-800 dark:hover:bg-slate-800/40">
                             <td className="p-3 font-mono text-xs font-bold text-brand-600">
                               {eq.inventory_code}
                             </td>
@@ -472,18 +612,30 @@ export default function ProjectsPage() {
                               )}
                             </td>
                             <td className="p-3 text-right print:hidden">
-                              {Number(eq.remaining_in_project) > 0 && can('project.manage') && (
-                                <button
-                                  onClick={() => {
-                                    setRQty(String(Number(eq.remaining_in_project)))
-                                    setRToWh(warehouses[0]?.id || '')
-                                    setReturnModal({ project: activeProj, item: eq })
-                                  }}
-                                  className="inline-flex items-center gap-1 rounded bg-emerald-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-emerald-700"
-                                >
-                                  <RotateCcw className="h-3 w-3" /> Depoya Dönüş Al
-                                </button>
-                              )}
+                              <div className="inline-flex items-center justify-end gap-1.5">
+                                {Number(eq.remaining_in_project) > 0 && can('project.manage') && (
+                                  <button
+                                    onClick={() => {
+                                      setRQty(String(Number(eq.remaining_in_project)))
+                                      setRToWh(warehouses[0]?.id || '')
+                                      setReturnModal({ project: activeProj, item: eq })
+                                    }}
+                                    title="Depoya Dönüş Al"
+                                    className="inline-flex items-center gap-1 rounded bg-emerald-600 px-2 py-1 text-xs font-semibold text-white hover:bg-emerald-700"
+                                  >
+                                    <RotateCcw className="h-3 w-3" /> Dönüş Al
+                                  </button>
+                                )}
+                                {can('project.manage') && (
+                                  <button
+                                    onClick={() => handleDeleteEquipment(eq)}
+                                    title="Bu hareket satırını projeden sil (Sahadaysa depoya geri döner)"
+                                    className="rounded p-1 text-slate-400 hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-950/40 transition"
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </button>
+                                )}
+                              </div>
                             </td>
                           </tr>
                         ))}
@@ -615,6 +767,122 @@ export default function ProjectsPage() {
               </button>
               <button className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white">
                 Projeyi Kaydet
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* Projeyi Düzenle / Tarihler & Durum Modalı */}
+      {editModal && (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-black/50 p-4">
+          <form
+            onSubmit={submitUpdateProject}
+            className="w-full max-w-lg space-y-4 rounded-2xl bg-white p-6 shadow-xl dark:bg-slate-900"
+          >
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-lg font-bold">Projeyi Düzenle & Tarihler</h2>
+                <div className="font-mono text-xs text-brand-600">{editModal.code}</div>
+              </div>
+              <button type="button" onClick={() => setEditModal(null)}>
+                <X className="h-5 w-5 text-slate-400" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <label className="block text-sm font-medium">
+                Proje Adı *
+                <input
+                  required
+                  value={eName}
+                  onChange={e => setEName(e.target.value)}
+                  className={inputCls + ' mt-1'}
+                />
+              </label>
+              <label className="block text-sm font-medium">
+                Müşteri / Kurum
+                <input
+                  value={eCustomer}
+                  onChange={e => setECustomer(e.target.value)}
+                  className={inputCls + ' mt-1'}
+                />
+              </label>
+            </div>
+
+            <div className="grid grid-cols-3 gap-3">
+              <label className="block text-sm font-medium">
+                Proje Durumu
+                <select
+                  value={eStatus}
+                  onChange={e => setEStatus(e.target.value as ProjectRecord['status'])}
+                  className={inputCls + ' mt-1 font-medium'}
+                >
+                  <option value="planned">Planlanan</option>
+                  <option value="active">Aktif (Sahada)</option>
+                  <option value="completed">Tamamlandı (Kapalı)</option>
+                  <option value="cancelled">İptal Edildi</option>
+                </select>
+              </label>
+              <label className="block text-sm font-medium">
+                Başlama Tarihi
+                <input
+                  type="date"
+                  value={eStart}
+                  onChange={e => setEStart(e.target.value)}
+                  className={inputCls + ' mt-1'}
+                />
+              </label>
+              <label className="block text-sm font-medium">
+                Bitiş Tarihi
+                <input
+                  type="date"
+                  value={eEnd}
+                  onChange={e => setEEnd(e.target.value)}
+                  className={inputCls + ' mt-1'}
+                />
+              </label>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <label className="block text-sm font-medium">
+                Proje Sorumlusu
+                <input
+                  value={eManager}
+                  onChange={e => setEManager(e.target.value)}
+                  className={inputCls + ' mt-1'}
+                />
+              </label>
+              <label className="block text-sm font-medium">
+                Proje Adresi
+                <input
+                  value={eAddress}
+                  onChange={e => setEAddress(e.target.value)}
+                  className={inputCls + ' mt-1'}
+                />
+              </label>
+            </div>
+
+            <label className="block text-sm font-medium">
+              Açıklama
+              <textarea
+                rows={2}
+                value={eDesc}
+                onChange={e => setEDesc(e.target.value)}
+                className={inputCls + ' mt-1'}
+              />
+            </label>
+
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setEditModal(null)}
+                className="rounded-lg border border-slate-300 px-4 py-2 text-sm dark:border-slate-700"
+              >
+                İptal
+              </button>
+              <button className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700">
+                Değişiklikleri Kaydet
               </button>
             </div>
           </form>

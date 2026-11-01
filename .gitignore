@@ -1,0 +1,15 @@
+.env
+*.db
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+node_modules/
+frontend/node_modules/
+dist/
+frontend/dist/
+storage/
+backend/storage/
+backups/
+backend/backups/
+*.tsbuildinfo

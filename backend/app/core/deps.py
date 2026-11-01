@@ -8,7 +8,24 @@ from app.core.security import decode_access_token
 from app.db.session import get_db
 from app.models.core import AuditLog, User
 
+from datetime import date, datetime
+from decimal import Decimal
+
 bearer = HTTPBearer(auto_error=False)
+
+
+def _json_safe(val):
+    if isinstance(val, dict):
+        return {k: _json_safe(v) for k, v in val.items()}
+    if isinstance(val, (list, tuple, set)):
+        return [_json_safe(x) for x in val]
+    if isinstance(val, (datetime, date)):
+        return val.isoformat()
+    if isinstance(val, Decimal):
+        return str(val)
+    if isinstance(val, uuid.UUID):
+        return str(val)
+    return val
 
 
 def client_ip(request: Request) -> str | None:
@@ -51,4 +68,4 @@ def require_permission(code: str):
 def write_audit(db: Session, *, tenant_id, user_id, action: str, entity: str | None = None,
                 entity_id=None, old=None, new=None, ip: str | None = None) -> None:
     db.add(AuditLog(tenant_id=tenant_id, user_id=user_id, action=action, entity=entity,
-                    entity_id=str(entity_id) if entity_id else None, old_value=old, new_value=new, ip=ip))
+                    entity_id=str(entity_id) if entity_id else None, old_value=_json_safe(old), new_value=_json_safe(new), ip=ip))

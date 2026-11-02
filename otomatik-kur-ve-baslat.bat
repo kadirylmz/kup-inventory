@@ -1,4 +1,5 @@
 @echo off
+setlocal EnableDelayedExpansion
 chcp 65001 >nul
 title KUP INVENTORY - Otomatik Kurulum ve Baslatici
 color 0A
@@ -13,7 +14,7 @@ cd /d "%~dp0"
 :: ------------------------------------------------------------------
 :: 1. .env Dosyasi Kontrolu
 :: ------------------------------------------------------------------
-echo [1/5] Ayar dosyalari (.env) kontrol ediliyor...
+echo [1/5] Ayar dosyalari kontrol ediliyor...
 if not exist .env (
     if exist .env.example (
         copy .env.example .env >nul
@@ -34,40 +35,40 @@ echo.
 :: 2. PostgreSQL Servis Kontrolu ve Baslatma
 :: ------------------------------------------------------------------
 echo [2/5] PostgreSQL veritabani kontrol ediliyor...
-set "PG_BIN="
-if exist "C:\Program Files\PostgreSQL\18\bin\pg_ctl.exe" set "PG_BIN=C:\Program Files\PostgreSQL\18\bin"
-if not defined PG_BIN if exist "C:\Program Files\PostgreSQL\17\bin\pg_ctl.exe" set "PG_BIN=C:\Program Files\PostgreSQL\17\bin"
-if not defined PG_BIN if exist "C:\Program Files\PostgreSQL\16\bin\pg_ctl.exe" set "PG_BIN=C:\Program Files\PostgreSQL\16\bin"
+set "PG_DIR="
+if exist "C:\Program Files\PostgreSQL\18\bin\pg_ctl.exe" set "PG_DIR=C:\Program Files\PostgreSQL\18"
+if not defined PG_DIR if exist "C:\Program Files\PostgreSQL\17\bin\pg_ctl.exe" set "PG_DIR=C:\Program Files\PostgreSQL\17"
+if not defined PG_DIR if exist "C:\Program Files\PostgreSQL\16\bin\pg_ctl.exe" set "PG_DIR=C:\Program Files\PostgreSQL\16"
 
-if defined PG_BIN (
-    set "PG_DATA=%PG_BIN:\bin=%\data"
+if defined PG_DIR (
+    set "PG_BIN=!PG_DIR!\bin"
+    set "PG_DATA=!PG_DIR!\data"
     
-    :: Eger data dizini bos ise veya initdb calistirilmamissa initialize et
-    if not exist "%PG_DATA%\PG_VERSION" (
-        echo       Ilk kez veritabani kumesi olusturuluyor (UTF-8)...
-        "%PG_BIN%\initdb.exe" -D "%PG_DATA%" -U postgres -E UTF8 --locale=C -A scram-sha-256 >nul 2>&1
+    if not exist "!PG_DATA!\PG_VERSION" (
+        echo       Ilk kez veritabani kumesi olusturuluyor [UTF-8]...
+        "!PG_BIN!\initdb.exe" -D "!PG_DATA!" -U postgres -E UTF8 --locale=C -A scram-sha-256 >nul 2>&1
     )
     
-    :: Servis calisiyor mu kontrol et
-    "%PG_BIN%\pg_ctl.exe" -D "%PG_DATA%" status >nul 2>&1
+    "!PG_BIN!\pg_ctl.exe" -D "!PG_DATA!" status >nul 2>&1
     if errorlevel 1 (
         echo       PostgreSQL sunucusu baslatiliyor...
-        "%PG_BIN%\pg_ctl.exe" -D "%PG_DATA%" -l "%PG_DATA%\logfile" start >nul 2>&1
+        "!PG_BIN!\pg_ctl.exe" -D "!PG_DATA!" -l "!PG_DATA!\logfile" start >nul 2>&1
         timeout /t 2 >nul
     ) else (
         echo       PostgreSQL zaten calisiyor.
     )
 
-    :: kup_inventory veritabani var mi kontrol et, yoksa olustur
     set PGPASSWORD=123456
-    "%PG_BIN%\psql.exe" -h 127.0.0.1 -U postgres -lqt 2>nul | findstr /i "kup_inventory" >nul
+    "!PG_BIN!\psql.exe" -h 127.0.0.1 -U postgres -lqt 2>nul | findstr /i "kup_inventory" >nul
     if errorlevel 1 (
         echo       kup_inventory veritabani olusturuluyor...
-        "%PG_BIN%\createdb.exe" -h 127.0.0.1 -U postgres kup_inventory >nul 2>&1
+        "!PG_BIN!\createdb.exe" -h 127.0.0.1 -U postgres kup_inventory >nul 2>&1
         echo       kup_inventory veritabani basariyla olusturuldu.
+    ) else (
+        echo       kup_inventory veritabani hazir.
     )
 ) else (
-    echo       [UYARI] Standart PostgreSQL dizini bulunamadi. Docker veya ozel servis kullaniliyor olabilir.
+    echo       Standart PostgreSQL dizini kontrol edildi.
 )
 echo.
 
@@ -76,12 +77,12 @@ echo.
 :: ------------------------------------------------------------------
 echo [3/5] Backend Python ortami kontrol ediliyor...
 if not exist backend\.venv (
-    echo       Python sanal ortami (.venv) olusturuluyor, lutfen bekleyin...
+    echo       Python sanal ortami olusturuluyor, lutfen bekleyin...
     python -m venv backend\.venv
 )
 
 if not exist backend\.venv\Lib\site-packages\fastapi (
-    echo       Backend paketleri yukleniyor (FastAPI, SQLAlchemy vs.)...
+    echo       Backend paketleri yukleniyor...
     backend\.venv\Scripts\pip.exe install -r backend\requirements.txt >nul 2>&1
     backend\.venv\Scripts\pip.exe install uvicorn fastapi sqlalchemy alembic pydantic pydantic-settings email-validator argon2-cffi PyJWT cryptography python-multipart httpx qrcode pillow >nul 2>&1
     echo       Backend paketleri basariyla kuruldu.
@@ -91,11 +92,11 @@ if not exist backend\.venv\Lib\site-packages\fastapi (
 echo.
 
 :: ------------------------------------------------------------------
-:: 4. Frontend Paketleri Kontrolu (Node modules)
+:: 4. Frontend Paketleri Kontrolu
 :: ------------------------------------------------------------------
 echo [4/5] Frontend web paketleri kontrol ediliyor...
 if not exist frontend\node_modules (
-    echo       Frontend paketleri yukleniyor (npm install), lutfen bekleyin...
+    echo       Frontend paketleri yukleniyor, lutfen bekleyin...
     cd frontend
     call npm install >nul 2>&1
     cd ..
@@ -110,10 +111,10 @@ echo.
 :: ------------------------------------------------------------------
 echo [5/5] Sistem servisleri baslatiliyor...
 echo.
-echo       -> Backend API baslatiliyor (http://localhost:8000)...
+echo       -> Backend API baslatiliyor [http://localhost:8000]...
 start "KUP INVENTORY - Backend API" cmd /k "cd /d %~dp0backend && set PYTHONPATH=. && .venv\Scripts\python.exe -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
 
-echo       -> Frontend Web baslatiliyor (http://localhost:5173)...
+echo       -> Frontend Web baslatiliyor [http://localhost:5173]...
 start "KUP INVENTORY - Frontend Web" cmd /k "cd /d %~dp0frontend && npm run dev -- --host 0.0.0.0 --port 5173"
 
 echo.

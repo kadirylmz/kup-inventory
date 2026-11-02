@@ -108,13 +108,17 @@ npm install
 
 ---
 
-### 4. Tek Tıkla Başlatma (`baslat-yerel.bat`)
-Kurulumlar tamamlandıktan sonra sunucuyu açmak için proje ana dizinindeki **`baslat-yerel.bat`** dosyasına çift tıklamanız yeterlidir.
+### 4. Tek Tıkla Kurulum ve Başlatma (`otomatik-kur-ve-baslat.bat`) 🚀
+İster ilk defa kuruyor olun, ister daha sonra sunucuyu açmak isteyin; tek yapmanız gereken **`otomatik-kur-ve-baslat.bat`** dosyasına çift tıklamaktır.
 
-Bu betik otomatik olarak:
-1. PostgreSQL veritabanının açık olup olmadığını kontrol eder, kapalıysa başlatır.
-2. Backend API sunucusunu başlatır (`http://localhost:8000`).
-3. Frontend web arayüzünü başlatır (`http://localhost:5173`).
+Bu betik sırasıyla:
+1. `.env` ayar dosyalarını kontrol eder, eksikse otomatik üretir.
+2. PostgreSQL veritabanı kümesini ve `kup_inventory` veritabanını kontrol eder, kapalıysa başlatır.
+3. Python sanal ortamını (`.venv`) ve eksik kütüphaneleri otomatik yükler.
+4. Frontend `npm install` paketlerini kontrol eder, eksikse kurar.
+5. Backend (`:8000`) ve Frontend (`:5173`) sunucularını aynı anda ayağa kaldırır.
+
+*(Not: Daha önce kurulum yaptıysanız ve yalnızca hızlıca sunucuları açmak isterseniz **`baslat-yerel.bat`** dosyasını da kullanabilirsiniz.)*
 
 ---
 

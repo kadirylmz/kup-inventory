@@ -37,32 +37,95 @@
 
 ---
 
-## Hızlı Başlangıç
+## Sistem Gereksinimleri (Hangi Programlar Gerekli?)
+
+Sunucuyu çalıştırmak için ortamınıza en uygun yöntemi seçebilirsiniz:
+
+### Yöntem 1: Docker ile Kurulum (Önerilen — En Kolay Yol)
+Tüm servisler (Python API, React arayüzü, PostgreSQL 16 veritabanı ve Nginx reverse proxy) izole konteynerlar içinde hazır çalışır. **Bilgisayarınıza ayrıca Python veya PostgreSQL kurmanıza gerek kalmaz.**
+
+- **Gerekli Programlar**:
+  - [Docker Desktop](https://www.docker.com/products/docker-desktop/) (Windows için WSL2 tabanlı kurulum önerilir).
+  - *Not: Docker Desktop kurulduktan sonra arka planda açık ve çalışır ("Engine running") durumda olmalıdır.*
+
+### Yöntem 2: Yerel Geliştirici Ortamı (Docker Olmadan)
+Eğer sistemi doğrudan Windows üzerinde geliştirmek veya çalıştırmak isterseniz:
+
+- **Gerekli Programlar**:
+  - **Python 3.11 veya 3.12**: [python.org](https://www.python.org/downloads/) üzerinden indirin. Kurulum sihirbazının ilk ekranındaki **"Add python.exe to PATH"** kutucuğunu mutlaka işaretleyin.
+  - **Node.js (LTS)**: [nodejs.org](https://nodejs.org/) (npm ile birlikte gelir, v20 veya üzeri).
+  - **PostgreSQL 16**: [postgresql.org](https://www.postgresql.org/download/windows/) üzerinden indirin ve `kup_inventory` adında bir veritabanı oluşturun.
+  - **Git**: [git-scm.com](https://git-scm.com/) (Kaynak kod yönetimi için).
+
+---
+
+## Hızlı Başlangıç (İlk Kez Çalıştırma)
 
 ### Seçenek 1: Docker Compose ile Kurumsal Kurulum (Önerilen)
-```bash
-cp .env.example .env
-docker compose up -d --build
-```
-veya Windows üzerinde doğrudan **`baslat-docker.bat`** dosyasına çift tıklayın.
-- **Web Arayüzü**: `http://localhost` (veya `http://inventory.local`)
 
-### Seçenek 2: Yerel Geliştirme Ortamında Başlatma
-Windows üzerinde **`baslat-yerel.bat`** dosyasına çift tıklayın veya:
+1. **Docker Desktop'ı Başlatın:**
+   - Windows Başlat menüsünden **Docker Desktop** uygulamasını açın.
+   - Sol alttaki göstergenin yeşil (**"Engine running"**) olmasını bekleyin.
+
+2. **Çevre Değişkenlerini Hazırlayın (`.env`):**
+   ```bash
+   # Windows Komut İstemi (CMD):
+   copy .env.example .env
+
+   # PowerShell:
+   Copy-Item .env.example .env
+   ```
+
+3. **Sunucuyu Ayağa Kaldırın:**
+   - Windows üzerinde doğrudan **`baslat-docker.bat`** dosyasına çift tıklayabilirsiniz (bu betik `.env` yoksa otomatik oluşturur ve Docker konteynerlarını ayağa kaldırır).
+   - Veya komut satırından:
+     ```bash
+     docker compose up -d --build
+     ```
+
+4. **Sisteme Giriş:**
+   - **Web Arayüzü**: `http://localhost` (veya yerel ağ IP adresiniz: `http://192.168.x.x`)
+   - **Varsayılan Yönetici Bilgileri**:
+     - **E-posta**: `admin@kup.local`
+     - **Şifre**: `ChangeMe!12345`
+
+---
+
+### Seçenek 2: Yerel Geliştirme Ortamında Başlatma (Docker'sız)
+
+Windows üzerinde **`baslat-yerel.bat`** dosyasına çift tıklayın veya elle başlatın:
+
 ```bash
-# Backend
+# 1. Backend Kurulumu ve Başlatma
 cd backend
+python -m venv .venv
+.venv\Scripts\activate
+pip install -r requirements.txt
 uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
-# Frontend
+# 2. Frontend Kurulumu ve Başlatma (Yeni bir terminalde)
 cd frontend
 npm install
-npm run dev
+npm run dev -- --host 0.0.0.0 --port 5173
 ```
+- **Yerel Geliştirme Arayüzü**: `http://localhost:5173`
+- **Backend API Docs (Swagger)**: `http://localhost:8000/docs`
 
-### Varsayılan Yönetici Girişi
-- **E-posta**: `admin@kup.local`
-- **Şifre**: `ChangeMe!12345`
+---
+
+## Sık Karşılaşılan Sorunlar ve Çözümleri
+
+### 1. `failed to connect to the docker API` Hatası
+- **Neden**: Docker Desktop uygulaması arka planda çalışmıyor.
+- **Çözüm**: Başlat menüsünden **Docker Desktop**'ı açın. Sol altta baloncuk yeşile dönüp "Engine running" yazdıktan sonra `baslat-docker.bat`'ı tekrar çalıştırın.
+
+### 2. `Port 80 is already in use` (Port Çakışması)
+- **Neden**: Bilgisayarınızda IIS, Skype veya başka bir yerel servis 80 numaralı portu kullanıyor olabilir.
+- **Çözüm**: `docker-compose.yml` dosyasındaki `ports` satırını `"8080:80"` olarak değiştirip `http://localhost:8080` adresinden sisteme erişebilirsiniz.
+
+### 3. Yerel Ağdaki Diğer Cihazlardan (Tablet, Telefon, Başka PC) Bağlanma
+- Sunucunun çalıştığı ana makinenin yerel IP adresini öğrenin (`ipconfig` komutu ile, örn: `192.168.1.45`).
+- Ağdaki diğer cihazların tarayıcısına `http://192.168.1.45` yazarak sisteme erişebilirsiniz. Windows Güvenlik Duvarı bağlantı uyarısı verirse "Özel Ağlar" için onay verin.
 
 ---
 

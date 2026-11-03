@@ -17,6 +17,7 @@ import { saveFormatConfigLocal } from '@/lib/format'
 
 interface SystemSettings {
   company_name: string
+  logo_url?: string | null
   default_reporting_currency: string
   auto_backup_enabled: boolean
   auto_backup_time: string
@@ -43,6 +44,7 @@ export default function SettingsBackupsPage() {
   const qc = useQueryClient()
   const [form, setForm] = useState<SystemSettings>({
     company_name: 'KÜP Prodüksiyon',
+    logo_url: null,
     default_reporting_currency: 'TRY',
     auto_backup_enabled: true,
     auto_backup_time: '02:00',
@@ -62,6 +64,7 @@ export default function SettingsBackupsPage() {
     if (settingsData) {
       const merged: SystemSettings = {
         company_name: settingsData.company_name ?? 'KÜP Prodüksiyon',
+        logo_url: settingsData.logo_url ?? null,
         default_reporting_currency: settingsData.default_reporting_currency ?? 'TRY',
         auto_backup_enabled: settingsData.auto_backup_enabled ?? true,
         auto_backup_time: settingsData.auto_backup_time ?? '02:00',
@@ -75,6 +78,42 @@ export default function SettingsBackupsPage() {
       saveFormatConfigLocal(merged)
     }
   }, [settingsData])
+
+  const [uploadingLogo, setUploadingLogo] = useState(false)
+  const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const fd = new FormData()
+    fd.append('file', file)
+    try {
+      setUploadingLogo(true)
+      const res = await api<{ logo_url: string }>('/settings/logo', {
+        method: 'POST',
+        body: fd,
+      })
+      setForm(prev => ({ ...prev, logo_url: res.logo_url }))
+      toast.success('Şirket logosu yüklendi ve güncellendi.')
+      qc.invalidateQueries({ queryKey: ['system-settings'] })
+    } catch (err) {
+      toast.error((err as Error).message)
+    } finally {
+      setUploadingLogo(false)
+    }
+  }
+
+  const handleRemoveLogo = async () => {
+    setForm(prev => ({ ...prev, logo_url: null }))
+    try {
+      await api('/settings', {
+        method: 'PUT',
+        body: JSON.stringify({ ...form, logo_url: null }),
+      })
+      toast.success('Logo kaldırıldı.')
+      qc.invalidateQueries({ queryKey: ['system-settings'] })
+    } catch (err) {
+      toast.error((err as Error).message)
+    }
+  }
 
   const { data: backups = [] } = useQuery({
     queryKey: ['backups'],
@@ -209,8 +248,39 @@ export default function SettingsBackupsPage() {
               <Sliders className="h-4 w-4 text-brand-600" /> Kurumsal Genel Ayarlar
             </h2>
             <div className="space-y-3 text-sm">
+              {/* Şirket Logosu Yükleme */}
               <div>
-                <label className="mb-1 block text-xs font-medium">Kurum / Şirket Ünvanı</label>
+                <label className="mb-1 block text-xs font-medium">Uygulama / Şirket Logosu</label>
+                <div className="flex items-center gap-4 rounded-xl border border-dashed border-slate-300 p-3 dark:border-slate-700">
+                  {form.logo_url ? (
+                    <div className="relative flex h-14 w-28 items-center justify-center rounded-lg bg-slate-100 p-1 dark:bg-slate-800">
+                      <img src={form.logo_url} alt="Logo" className="max-h-full max-w-full object-contain" />
+                    </div>
+                  ) : (
+                    <div className="flex h-14 w-14 items-center justify-center rounded-lg bg-slate-100 text-xs font-bold text-slate-400 dark:bg-slate-800">
+                      LOGO
+                    </div>
+                  )}
+                  <div className="space-y-1 text-xs">
+                    <label className="inline-flex cursor-pointer items-center rounded-lg bg-brand-600 px-3 py-1.5 font-semibold text-white hover:bg-brand-700">
+                      {uploadingLogo ? 'Yükleniyor...' : 'Yeni Logo Seç'}
+                      <input type="file" accept="image/*" onChange={handleLogoUpload} className="hidden" disabled={uploadingLogo} />
+                    </label>
+                    {form.logo_url && (
+                      <button
+                        type="button"
+                        onClick={handleRemoveLogo}
+                        className="ml-2 inline-flex items-center rounded-lg border border-rose-200 px-2.5 py-1 text-xs text-rose-600 hover:bg-rose-50 dark:border-rose-900"
+                      >
+                        Logoyu Kaldır
+                      </button>
+                    )}
+                    <p className="text-[11px] text-slate-500">PNG, JPG, SVG veya WEBP formatında önerilir.</p>
+                  </div>
+                </div>
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium">Uygulama / Şirket Başlığı (Sol Üstte Görünür)</label>
                 <input
                   value={form.company_name}
                   onChange={e => setForm({ ...form, company_name: e.target.value })}

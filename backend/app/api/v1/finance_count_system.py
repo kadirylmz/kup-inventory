@@ -1626,6 +1626,7 @@ def verify_backup_integrity(
 # --- SİSTEM AYARLARI ---
 class SettingsUpdateIn(BaseModel):
     company_name: str = "KÜP Prodüksiyon"
+    logo_url: str | None = None
     default_reporting_currency: str = "TRY"
     auto_backup_enabled: bool = True
     auto_backup_time: str = "02:00"
@@ -1634,6 +1635,18 @@ class SettingsUpdateIn(BaseModel):
     trim_trailing_zeros: bool = True
     code_padding_digits: int = 2
     code_prefix: str = "KUP"
+
+
+@router.get("/settings/public")
+def get_public_settings(db: Session = Depends(get_db)):
+    """Giriş ekranı ve genel arayüz için şirket adı ve logo bilgisini döner."""
+    row = db.scalar(select(Setting).where(Setting.key == "general"))
+    if row and row.value:
+        return {
+            "company_name": row.value.get("company_name", "KÜP Prodüksiyon"),
+            "logo_url": row.value.get("logo_url"),
+        }
+    return {"company_name": "KÜP Prodüksiyon", "logo_url": None}
 
 
 @router.get("/settings")

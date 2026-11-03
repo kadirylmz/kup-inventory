@@ -320,3 +320,43 @@ def delete_product_document(
         ip=client_ip(request),
     )
     db.commit()
+
+@router.post("/settings/logo", status_code=200)
+def upload_company_logo(
+    request: Request,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    me: User = Depends(require_permission("setting.manage")),
+):
+    """Şirket logosu yükler ve ayarlara kaydeder."""
+    from app.models.core import Setting
+    fa = _verify_and_store(
+        file,
+        IMG_MIME,
+        me.tenant_id,
+        me.id,
+        "company_logo",
+        me.tenant_id,
+        db,
+    )
+    logo_url = f"/api/v1/files/{fa.id}"
+    row = db.scalar(select(Setting).where(Setting.tenant_id == me.tenant_id, Setting.key == "general"))
+    if not row:
+        row = Setting(tenant_id=me.tenant_id, key="general", value={"logo_url": logo_url})
+        db.add(row)
+    else:
+        new_val = dict(row.value or {})
+        new_val["logo_url"] = logo_url
+        row.value = new_val
+
+    write_audit(
+        db,
+        tenant_id=me.tenant_id,
+        user_id=me.id,
+        action="settings.upload_logo",
+        entity="setting",
+        new={"logo_url": logo_url},
+        ip=client_ip(request),
+    )
+    db.commit()
+    return {"logo_url": logo_url, "file_id": str(fa.id)}

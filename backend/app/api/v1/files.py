@@ -332,7 +332,7 @@ def upload_company_logo(
     from app.models.core import Setting
     fa = _verify_and_store(
         file,
-        ALLOWED_IMAGES,
+        IMG_MIME,
         me.tenant_id,
         me.id,
         "company_logo",

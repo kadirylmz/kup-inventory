@@ -587,7 +587,6 @@ def list_products(
     brand_id: uuid.UUID | None = None,
     tracking_type: str | None = None,
     status: str | None = None,
-    is_fixture: bool | None = None,
     include_inactive: bool = False,
     db: Session = Depends(get_db),
     me: User = Depends(require_permission("product.view")),
@@ -601,11 +600,6 @@ def list_products(
         stmt = stmt.where(Product.brand_id == brand_id)
     if tracking_type:
         stmt = stmt.where(Product.tracking_type == tracking_type)
-    if is_fixture is not None:
-        if is_fixture:
-            stmt = stmt.where(Product.is_fixture == True)
-        else:
-            stmt = stmt.where(or_(Product.is_fixture == False, Product.is_fixture.is_(None)))
     if status == "assigned":
         from app.models.warehouse_assignment import AssignmentItem, Assignment
         asg_prod_ids = select(AssignmentItem.product_id).join(Assignment, Assignment.id == AssignmentItem.assignment_id).where(
@@ -880,7 +874,6 @@ def create_product(
         market_value_currency=body.market_value_currency,
         last_valuation_date=val_date,
         status=body.status,
-        is_fixture=body.is_fixture,
         warehouse_name=body.warehouse_name,
         shelf_section=body.shelf_section,
         location_detail=body.location_detail,
@@ -1640,79 +1633,27 @@ def inventory_summary(
 
     cost_by_currency: dict[str, Decimal] = {"TRY": Decimal("0"), "USD": Decimal("0"), "EUR": Decimal("0")}
     market_by_currency: dict[str, Decimal] = {"TRY": Decimal("0"), "USD": Decimal("0"), "EUR": Decimal("0")}
-    book_value_by_currency: dict[str, Decimal] = {"TRY": Decimal("0"), "USD": Decimal("0"), "EUR": Decimal("0")}
-
-    operational_market_value_by_currency: dict[str, Decimal] = {"TRY": Decimal("0"), "USD": Decimal("0"), "EUR": Decimal("0")}
-    fixture_market_value_by_currency: dict[str, Decimal] = {"TRY": Decimal("0"), "USD": Decimal("0"), "EUR": Decimal("0")}
-
-    fixture_cost_by_currency: dict[str, Decimal] = {"TRY": Decimal("0"), "USD": Decimal("0"), "EUR": Decimal("0")}
-    fixture_book_value_by_currency: dict[str, Decimal] = {"TRY": Decimal("0"), "USD": Decimal("0"), "EUR": Decimal("0")}
-
-    prod_by_id = {p.id: p for p in products}
 
     for a in assets:
         if a.status == "scrapped":
             continue
-        prod = prod_by_id.get(a.product_id)
-        is_fix = getattr(prod, "is_fixture", False) if prod else False
-        p_price = a.purchase_price if a.purchase_price is not None else (prod.purchase_price if prod else None)
-
-        if p_price is not None:
-            c = a.purchase_currency if a.purchase_currency in cost_by_currency else (prod.purchase_currency if prod and prod.purchase_currency in cost_by_currency else "TRY")
-            cost_by_currency[c] += p_price
-            if is_fix:
-                fixture_cost_by_currency[c] += p_price
-
-            # Net Defter Değeri (Amortisman Hesabı: 5 yıllık doğrusal amortisman, yıllık %20)
-            p_date = a.purchase_date or (prod.purchase_date if prod else None)
-            if p_date:
-                years_used = max(0.0, (date.today() - p_date).days / 365.25)
-                ratio = max(0.0, 1.0 - (years_used * 0.20))
-                bv = p_price * Decimal(str(ratio))
-            else:
-                bv = p_price
-            book_value_by_currency[c] += bv
-            if is_fix:
-                fixture_book_value_by_currency[c] += bv
-
+        if a.purchase_price is not None:
+            c = a.purchase_currency if a.purchase_currency in cost_by_currency else "TRY"
+            cost_by_currency[c] += a.purchase_price
         if a.current_market_value is not None:
             mc = a.market_value_currency if a.market_value_currency in market_by_currency else "TRY"
             market_by_currency[mc] += a.current_market_value
-            if is_fix:
-                fixture_market_value_by_currency[mc] += a.current_market_value
-            else:
-                operational_market_value_by_currency[mc] += a.current_market_value
 
     for p in products:
         if p.status == "scrapped":
             continue
         if p.tracking_type == "quantity":
-            is_fix = getattr(p, "is_fixture", False)
             if p.purchase_price is not None:
                 c = p.purchase_currency if p.purchase_currency in cost_by_currency else "TRY"
-                total_p_cost = p.purchase_price * p.quantity
-                cost_by_currency[c] += total_p_cost
-                if is_fix:
-                    fixture_cost_by_currency[c] += total_p_cost
-
-                if p.purchase_date:
-                    years_used = max(0.0, (date.today() - p.purchase_date).days / 365.25)
-                    ratio = max(0.0, 1.0 - (years_used * 0.20))
-                    bv = total_p_cost * Decimal(str(ratio))
-                else:
-                    bv = total_p_cost
-                book_value_by_currency[c] += bv
-                if is_fix:
-                    fixture_book_value_by_currency[c] += bv
-
+                cost_by_currency[c] += p.purchase_price * p.quantity
             if p.current_market_value is not None:
                 mc = p.market_value_currency if p.market_value_currency in market_by_currency else "TRY"
-                total_mkt = p.current_market_value * p.quantity
-                market_by_currency[mc] += total_mkt
-                if is_fix:
-                    fixture_market_value_by_currency[mc] += total_mkt
-                else:
-                    operational_market_value_by_currency[mc] += total_mkt
+                market_by_currency[mc] += p.current_market_value * p.quantity
 
     status_counts: dict[str, int] = {
         "active": 0,
@@ -1815,14 +1756,8 @@ def inventory_summary(
         "total_product_cards": total_products,
         "total_serial_assets": total_serial_assets,
         "total_physical_units": float(total_physical_units),
-        "total_fixture_units": sum(1 for p in products if getattr(p, "is_fixture", False)),
         "purchase_cost_by_currency": {k: float(v) for k, v in cost_by_currency.items()},
         "market_value_by_currency": {k: float(v) for k, v in market_by_currency.items()},
-        "operational_market_value_by_currency": {k: float(v) for k, v in operational_market_value_by_currency.items()},
-        "fixture_market_value_by_currency": {k: float(v) for k, v in fixture_market_value_by_currency.items()},
-        "book_value_by_currency": {k: float(v) for k, v in book_value_by_currency.items()},
-        "fixture_cost_by_currency": {k: float(v) for k, v in fixture_cost_by_currency.items()},
-        "fixture_book_value_by_currency": {k: float(v) for k, v in fixture_book_value_by_currency.items()},
         "exchange_rates": rates_dict,
         "status_counts": status_counts,
         "active_software_licenses": active_licenses,

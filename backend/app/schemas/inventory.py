@@ -194,7 +194,6 @@ class ProductCreate(BaseModel):
     last_valuation_date: date | None = None
 
     status: AssetStatus = "in_warehouse"
-    is_fixture: bool = False
     warehouse_name: str | None = Field(default=None, max_length=120)
     shelf_section: str | None = Field(default=None, max_length=120)
     location_detail: str | None = Field(default=None, max_length=180)
@@ -239,7 +238,6 @@ class ProductUpdate(BaseModel):
     location_detail: str | None = Field(default=None, max_length=180)
     internal_notes: str | None = None
     is_active: bool | None = None
-    is_fixture: bool | None = None
 
 
 class ProductOut(BaseModel):
@@ -290,7 +288,6 @@ class ProductOut(BaseModel):
     assigned_quantity: Decimal = Decimal("0")
     warehouse_quantity: Decimal = Decimal("0")
     is_active: bool
-    is_fixture: bool = False
     created_at: datetime
 
 

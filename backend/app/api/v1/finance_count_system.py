@@ -1622,6 +1622,26 @@ def verify_backup_integrity(
     valid = current_sha == b.sha256
     return {"id": b.id, "backup_no": b.backup_no, "integrity_ok": valid, "sha256": current_sha}
 
+@router.get("/backups/{backup_id}/download")
+def download_backup_file(
+    backup_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    me: User = Depends(require_permission("backup.view")),
+):
+    """Alınan ZIP yedek dosyasını bilgisayara indirir."""
+    b = db.get(BackupRecord, backup_id)
+    if not b or b.tenant_id != me.tenant_id:
+        raise HTTPException(404, "Yedek kaydı bulunamadı.")
+    p = Path(b.file_path)
+    if not p.is_file():
+        raise HTTPException(404, "Yedek arşiv dosyası sunucuda bulunamadı.")
+    filename = f"{b.backup_no}.zip"
+    return FileResponse(
+        path=str(p),
+        filename=filename,
+        media_type="application/zip",
+    )
+
 
 # --- SİSTEM AYARLARI ---
 class SettingsUpdateIn(BaseModel):

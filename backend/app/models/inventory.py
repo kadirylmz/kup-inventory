@@ -142,7 +142,6 @@ class Product(BaseMixin, Base):
     internal_notes: Mapped[str | None] = mapped_column(Text)
     primary_image_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("file_attachments.id"))
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
-    is_fixture: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, index=True)
 
     category: Mapped[Category] = relationship(foreign_keys=[category_id], lazy="selectin")
     subcategory: Mapped[Category | None] = relationship(foreign_keys=[subcategory_id], lazy="selectin")

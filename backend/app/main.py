@@ -28,6 +28,4 @@ app.include_router(api_router)
 
 @app.exception_handler(Exception)
 async def unhandled(request, exc):
-    import traceback
-    traceback.print_exc()
-    return JSONResponse({"detail": f"Sunucu Hatası: {str(exc)}"}, status_code=500)
+    return JSONResponse({"detail": "Beklenmeyen bir hata oluştu."}, status_code=500)

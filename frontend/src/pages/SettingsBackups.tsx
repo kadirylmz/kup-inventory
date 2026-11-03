@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Archive,
+  Copy,
+  FolderOpen,
   CheckCircle2,
   DatabaseBackup,
   DollarSign,
@@ -99,6 +101,11 @@ export default function SettingsBackupsPage() {
     },
     onError: (e: ApiError) => toast.error(e.message),
   })
+
+  const copyBackupPath = (path: string) => {
+    navigator.clipboard.writeText(path)
+    toast.success('Dosya yolu panoya kopyalandı! Dosya Gezgini adres çubuğuna yapıştırıp açabilirsiniz.')
+  }
 
   const verifyBackup = useMutation({
     mutationFn: (id: string) =>
@@ -432,6 +439,26 @@ export default function SettingsBackupsPage() {
             </button>
           </div>
 
+          {/* Yedek Klasörü Bilgisi */}
+          <div className="flex items-center justify-between rounded-xl border border-indigo-100 bg-indigo-50/60 p-3.5 text-xs text-indigo-900 dark:border-indigo-900/50 dark:bg-indigo-950/30 dark:text-indigo-200">
+            <div className="flex items-center gap-2.5">
+              <FolderOpen className="h-5 w-5 shrink-0 text-brand-600 dark:text-indigo-400" />
+              <div>
+                <span className="font-bold">Yedek Dosyaları Sunucu Klasörü:</span>
+                <span className="ml-1.5 font-mono bg-white/80 dark:bg-slate-900 px-2 py-0.5 rounded border border-indigo-200 dark:border-indigo-800">
+                  kup-inventory\backend\storage\backups
+                </span>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => copyBackupPath('storage\\backups')}
+              className="inline-flex items-center gap-1 font-semibold text-brand-700 hover:underline dark:text-indigo-300"
+            >
+              <Copy className="h-3.5 w-3.5" /> Klasör Yolunu Kopyala
+            </button>
+          </div>
+
           <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xs dark:border-slate-800 dark:bg-slate-900">
             <table className="w-full text-left text-sm">
               <thead className="border-b border-slate-200 bg-slate-50 text-xs uppercase text-slate-500 dark:border-slate-800 dark:bg-slate-800/50">
@@ -454,7 +481,20 @@ export default function SettingsBackupsPage() {
                 ) : (
                   backups.map(b => (
                     <tr key={b.id}>
-                      <td className="px-4 py-2.5 font-mono text-xs font-bold text-brand-600">{b.backup_no}</td>
+                      <td className="px-4 py-2.5">
+                        <div className="font-mono text-xs font-bold text-brand-600">{b.backup_no}</div>
+                        <div className="text-[11px] text-slate-400 font-mono flex items-center gap-1 mt-0.5">
+                          <span className="truncate max-w-[200px]" title={b.file_path}>{b.file_path}</span>
+                          <button
+                            type="button"
+                            onClick={() => copyBackupPath(b.file_path)}
+                            className="text-slate-500 hover:text-brand-600 p-0.5"
+                            title="Dosya yolunu kopyala"
+                          >
+                            <Copy className="h-3 w-3" />
+                          </button>
+                        </div>
+                      </td>
                       <td className="px-4 py-2.5 text-xs">{new Date(b.created_at).toLocaleString('tr-TR')}</td>
                       <td className="px-4 py-2.5 text-xs">{(b.size_bytes / 1024).toFixed(1)} KB</td>
                       <td className="px-4 py-2.5 font-mono text-[11px] text-slate-500">{b.sha256.slice(0, 16)}...</td>

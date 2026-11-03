@@ -102,9 +102,35 @@ export default function SettingsBackupsPage() {
     onError: (e: ApiError) => toast.error(e.message),
   })
 
-  const copyBackupPath = (path: string) => {
-    navigator.clipboard.writeText(path)
-    toast.success('Klasör yolu panoya kopyalandı! (Win+E ile Dosya Gezgini adres çubuğuna yapıştırıp klasörü doğrudan açabilirsiniz)')
+  const copyBackupPath = async (fallbackPath: string) => {
+    // 1. Try to open folder directly on OS
+    try {
+      const res = await api<{ opened: boolean; path: string }>('/backups/open-folder', { method: 'POST' })
+      if (res.opened) {
+        toast.success(`Yedek klasörü açıldı: ${res.path}`)
+        return
+      }
+    } catch {
+      /* Fallback to clipboard */
+    }
+
+    // 2. Fallback to clipboard copy
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(fallbackPath)
+        toast.success(`Klasör yolu kopyalandı: ${fallbackPath}`)
+      } else {
+        const ta = document.createElement('textarea')
+        ta.value = fallbackPath
+        document.body.appendChild(ta)
+        ta.select()
+        document.execCommand('copy')
+        ta.remove()
+        toast.success(`Klasör yolu kopyalandı: ${fallbackPath}`)
+      }
+    } catch {
+      prompt('Klasör yolunu buradan kopyalayabilirsiniz:', fallbackPath)
+    }
   }
 
   const verifyBackup = useMutation({

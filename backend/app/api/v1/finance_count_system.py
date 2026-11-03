@@ -1622,6 +1622,29 @@ def verify_backup_integrity(
     valid = current_sha == b.sha256
     return {"id": b.id, "backup_no": b.backup_no, "integrity_ok": valid, "sha256": current_sha}
 
+@router.post("/backups/open-folder")
+def open_backup_folder_in_os(
+    db: Session = Depends(get_db),
+    me: User = Depends(require_permission("backup.view")),
+):
+    """Sunucuda Windows Dosya Gezgini'ni doğrudan yedek klasöründe açar."""
+    import subprocess
+    import platform
+    s = get_settings()
+    bdir = (Path(s.upload_dir).parent / "backups").resolve()
+    bdir.mkdir(parents=True, exist_ok=True)
+    
+    try:
+        if platform.system() == "Windows":
+            os.startfile(str(bdir))
+        elif platform.system() == "Darwin":
+            subprocess.Popen(["open", str(bdir)])
+        else:
+            subprocess.Popen(["xdg-open", str(bdir)])
+        return {"opened": True, "path": str(bdir)}
+    except Exception as e:
+        return {"opened": False, "path": str(bdir), "error": str(e)}
+
 
 # --- SİSTEM AYARLARI ---
 class SettingsUpdateIn(BaseModel):

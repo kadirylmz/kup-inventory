@@ -1678,40 +1678,6 @@ def restore_backup_archive(
     db.commit()
     return {"message": "Yedek başarıyla geri yüklendi. Tüm veriler ve fotoğraflar güncellendi."}
 
-@router.delete("/backups/{backup_id}")
-def delete_backup_record(
-    backup_id: uuid.UUID,
-    request: Request,
-    db: Session = Depends(get_db),
-    me: User = Depends(require_permission("backup.manage")),
-):
-    """Yedek kaydını ve sunucudaki .ZIP dosyasını siler."""
-    b = db.get(BackupRecord, backup_id)
-    if not b or b.tenant_id != me.tenant_id or b.is_deleted:
-        raise HTTPException(404, "Yedek kaydı bulunamadı.")
-
-    # Diskteki zip dosyasını da temizle
-    try:
-        p = Path(b.file_path)
-        if p.is_file():
-            p.unlink()
-    except Exception:
-        pass
-
-    b.is_deleted = True
-    write_audit(
-        db,
-        tenant_id=me.tenant_id,
-        user_id=me.id,
-        action="backup.delete",
-        entity="backup_record",
-        entity_id=b.id,
-        old={"backup_no": b.backup_no},
-        ip=client_ip(request),
-    )
-    db.commit()
-    return {"message": "Yedek dosyası ve kaydı başarıyla silindi."}
-
 
 # --- SİSTEM AYARLARI ---
 class SettingsUpdateIn(BaseModel):

@@ -3,7 +3,6 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Archive,
   Download,
-  Trash2,
   Upload,
   CheckCircle2,
   DatabaseBackup,
@@ -171,20 +170,6 @@ Mevcut veritabanı ve fotoğraflar yedek dosyasındaki verilerle güncellenecekt
     },
     onError: (e: ApiError) => toast.error(e.message),
   })
-
-  const deleteBackup = useMutation({
-    mutationFn: (id: string) => api(`/backups/${id}`, { method: 'DELETE' }),
-    onSuccess: () => {
-      toast.success('Yedek başarıyla silindi.')
-      qc.invalidateQueries({ queryKey: ['backups'] })
-    },
-    onError: (e: ApiError) => toast.error(e.message),
-  })
-
-  const handleDeleteBackup = (b: BackupRow) => {
-    if (!window.confirm(`"${b.backup_no}" numaralı yedek dosyasını kalıcı olarak silmek istediğinize emin misiniz?`)) return
-    deleteBackup.mutate(b.id)
-  }
 
   const verifyBackup = useMutation({
     mutationFn: (id: string) =>
@@ -540,30 +525,18 @@ Mevcut veritabanı ve fotoğraflar yedek dosyasındaki verilerle güncellenecekt
                 </div>
               </div>
             </div>
-            <div className="flex items-center gap-2">
-
-              <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-slate-300 bg-white px-3.5 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">
-
-                <Upload className="h-4 w-4 text-brand-600" /> {restoring ? 'Yükleniyor...' : 'Yedek Dosyası Yükle (.ZIP)'}
-
-                <input type="file" accept=".zip" onChange={handleRestoreFile} className="hidden" disabled={restoring} />
-
-              </label>
-
-              <button
-
-                onClick={() => runBackup.mutate()}
-
-                disabled={runBackup.isPending}
-
-                className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
-
-              >
-
-                <Archive className="h-4 w-4" /> Şimdi Manuel Yedek Al
-
-              </button>
-
+            <div className="flex items-center gap-2">
+              <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-slate-300 bg-white px-3.5 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">
+                <Upload className="h-4 w-4 text-brand-600" /> {restoring ? 'Yükleniyor...' : 'Yedek Dosyası Yükle (.ZIP)'}
+                <input type="file" accept=".zip" onChange={handleRestoreFile} className="hidden" disabled={restoring} />
+              </label>
+              <button
+                onClick={() => runBackup.mutate()}
+                disabled={runBackup.isPending}
+                className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
+              >
+                <Archive className="h-4 w-4" /> Şimdi Manuel Yedek Al
+              </button>
             </div>
           </div>
 
@@ -614,13 +587,6 @@ Mevcut veritabanı ve fotoğraflar yedek dosyasındaki verilerle güncellenecekt
                             title="Yedek dosyasının bozulup bozulmadığını kontrol et"
                           >
                             <ShieldCheck className="h-3.5 w-3.5 text-emerald-600" /> Doğrula
-                          </button>
-                          <button
-                            onClick={() => handleDeleteBackup(b)}
-                            className="inline-flex items-center rounded-lg border border-rose-200 p-1 text-xs text-rose-600 hover:bg-rose-50 dark:border-rose-900/60 dark:hover:bg-rose-950/40"
-                            title="Yedeği Sil"
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
                           </button>
                         </div>
                       </td>

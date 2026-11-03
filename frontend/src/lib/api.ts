@@ -47,3 +47,20 @@ export async function api<T = unknown>(path: string, init: RequestInit = {}): Pr
   }
   return r.status === 204 ? (undefined as T) : r.json()
 }
+export async function apiBlob(path: string, init: RequestInit = {}): Promise<Blob> {
+  let r = await raw(path, init)
+  if (r.status === 401 && !path.startsWith('/auth/') && (await refreshSession())) {
+    r = await raw(path, init)
+  }
+  if (!r.ok) {
+    let msg = 'Dosya indirilemedi.'
+    try {
+      const d = await r.json()
+      msg = typeof d.detail === 'string' ? d.detail : msg
+    } catch {
+      /* yoksay */
+    }
+    throw new ApiError(r.status, msg)
+  }
+  return r.blob()
+}

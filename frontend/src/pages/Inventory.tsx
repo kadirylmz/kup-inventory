@@ -75,6 +75,7 @@ export interface ProductItem {
   assigned_quantity?: string
   warehouse_quantity?: string
   is_active: boolean
+  is_fixture?: boolean
 }
 
 export interface AssetItem {
@@ -145,7 +146,7 @@ const STATUS_LABELS: Record<string, { label: string; cls: string }> = {
 
 const SYM: Record<string, string> = { TRY: '₺', EUR: '€', USD: '$' }
 
-export default function InventoryPage() {
+export default function InventoryPage({ isFixtureOnly = false }: { isFixtureOnly?: boolean }) {
   const { can } = useAuth()
   const qc = useQueryClient()
   const [searchParams] = useSearchParams()
@@ -222,6 +223,7 @@ export default function InventoryPage() {
   const [fMarketVal, setFMarketVal] = useState('')
   const [fMarketCurr, setFMarketCurr] = useState<'TRY' | 'EUR' | 'USD'>('TRY')
   const [fStatus, setFStatus] = useState('in_warehouse')
+  const [fIsFixture, setFIsFixture] = useState(isFixtureOnly)
   const [fWarehouse, setFWarehouse] = useState('Merkez Depo')
   const [fShelf, setFShelf] = useState('')
   const [fLocation, setFLocation] = useState('')
@@ -260,6 +262,7 @@ export default function InventoryPage() {
   if (brandFilter) prodParams.set('brand_id', brandFilter)
   if (trackFilter) prodParams.set('tracking_type', trackFilter)
   if (statusFilter && statusFilter !== 'has_project') prodParams.set('status', statusFilter)
+  if (isFixtureOnly) prodParams.set('is_fixture', 'true')
 
   const { data: rawProducts = [], isLoading: pLoading } = useQuery({
     queryKey: ['products', prodParams.toString()],
@@ -351,6 +354,7 @@ export default function InventoryPage() {
     setFMarketVal('')
     setFMarketCurr('TRY')
     setFStatus('in_warehouse')
+    setFIsFixture(isFixtureOnly)
     setFWarehouse('Merkez Depo')
     setFShelf('')
     setFLocation('')
@@ -385,6 +389,7 @@ export default function InventoryPage() {
     setFMarketVal(cleanNumInput(p.current_market_value))
     setFMarketCurr(p.market_value_currency || 'TRY')
     setFStatus(p.status || 'in_warehouse')
+    setFIsFixture(p.is_fixture ?? isFixtureOnly)
     setFWarehouse(p.warehouse_name || 'Merkez Depo')
     setFShelf(p.shelf_section || '')
     setFLocation(p.location_detail || '')
@@ -471,6 +476,7 @@ export default function InventoryPage() {
             current_market_value: fMarketVal ? fMarketVal : null,
             market_value_currency: fMarketCurr,
             status: fStatus,
+            is_fixture: fIsFixture,
             warehouse_name: fWarehouse || null,
             shelf_section: fShelf || null,
             location_detail: fLocation || null,
@@ -520,6 +526,7 @@ export default function InventoryPage() {
             current_market_value: fMarketVal ? fMarketVal : null,
             market_value_currency: fMarketCurr,
             status: fStatus,
+            is_fixture: fIsFixture,
             warehouse_name: fWarehouse || null,
             shelf_section: fShelf || null,
             location_detail: fLocation || null,
@@ -848,9 +855,13 @@ export default function InventoryPage() {
       {/* Üst Başlık */}
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Envanter ve Varlık Yönetimi</h1>
+          <h1 className="text-2xl font-bold tracking-tight">
+            {isFixtureOnly ? 'Şirket Demirbaşları' : 'Envanter ve Varlık Yönetimi'}
+          </h1>
           <p className="text-sm text-slate-500">
-            Ürün katalog kartları, adet bazlı sarf malzemeleri, seri numaralı cihazlar ve projedeki ekipman takibi
+            {isFixtureOnly
+              ? 'Şirket demirbaşları, ofis mobilyaları, IT altyapısı ve sabit kıymet amortisman takibi'
+              : 'Ürün katalog kartları, adet bazlı sarf malzemeleri, seri numaralı cihazlar ve projedeki ekipman takibi'}
           </p>
         </div>
         {can('product.create') && (
@@ -858,7 +869,7 @@ export default function InventoryPage() {
             onClick={openNewModal}
             className="flex items-center gap-2 rounded-lg bg-brand-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-brand-700"
           >
-            <Plus className="h-4 w-4" /> Yeni Ürün / Cihaz Kaydı
+            <Plus className="h-4 w-4" /> {isFixtureOnly ? 'Yeni Demirbaş Kaydı' : 'Yeni Ürün / Cihaz Kaydı'}
           </button>
         )}
       </div>
@@ -1362,6 +1373,20 @@ export default function InventoryPage() {
             </div>
 
             <form onSubmit={submitProduct} className="mt-5 space-y-6">
+              {/* Demirbaş Belirteci */}
+              <div className="flex items-center gap-3 rounded-xl border border-purple-200 bg-purple-50/50 p-3.5 dark:border-purple-900/60 dark:bg-purple-950/20">
+                <input
+                  type="checkbox"
+                  id="chk-is-fixture"
+                  checked={fIsFixture}
+                  onChange={e => setFIsFixture(e.target.checked)}
+                  className="h-4 w-4 rounded border-purple-300 text-purple-600 focus:ring-purple-500"
+                />
+                <label htmlFor="chk-is-fixture" className="text-sm font-medium text-purple-900 dark:text-purple-200 cursor-pointer select-none">
+                  Bu ürün bir <strong>Şirket Demirbaşıdır</strong> (Ofis mobilyası, şirket bilgisayarı, klima, sabit teknik altyapı vb. Muhasebe defter değerine ve demirbaş bölümüne dahil edilir)
+                </label>
+              </div>
+
               {/* Bölüm 1: Temel Kimlik, Kategori ve Doğrudan Yazılabilir Marka/Model */}
               <div className="grid gap-4 sm:grid-cols-3">
                 <label className="block text-sm font-medium sm:col-span-2">

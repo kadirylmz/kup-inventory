@@ -11,7 +11,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.api.v1.warehouse_assignment import _adjust_balance, _next_no
@@ -549,6 +549,7 @@ def create_purchase_cost_correction(
 def list_three_values_comparison(
     reporting_currency: str = Query(default="TRY", pattern=r"^(TRY|EUR|USD)$"),
     useful_life_years: int = Query(default=5, ge=1, le=25),
+    scope: str = Query(default="all", pattern=r"^(all|inventory|fixture)$"),
     db: Session = Depends(get_db),
     me: User = Depends(require_permission("valuation.view")),
 ):
@@ -557,14 +558,19 @@ def list_three_values_comparison(
     1. Alış Maliyeti
     2. Güncel İkinci El Piyasa Değeri
     3. Muhasebesel Net Defter Değeri (Amortisman düşülmüş)
+    scope: 'all' (Tümü), 'inventory' (Sadece Teknik Envanter), 'fixture' (Sadece Şirket Demirbaşı)
     """
     rates = get_latest_rates(db, me.tenant_id)
     target_rate = rates.get(reporting_currency, Decimal("1.0"))
     today_year = date.today().year
 
-    products = db.scalars(
-        select(Product).where(Product.tenant_id == me.tenant_id, Product.is_deleted.is_(False))
-    ).all()
+    stmt = select(Product).where(Product.tenant_id == me.tenant_id, Product.is_deleted.is_(False))
+    if scope == "inventory":
+        stmt = stmt.where(or_(Product.is_fixture == False, Product.is_fixture.is_(None)))
+    elif scope == "fixture":
+        stmt = stmt.where(Product.is_fixture == True)
+
+    products = db.scalars(stmt).all()
 
     items = []
     total_purchase_rep = Decimal("0")
@@ -607,6 +613,7 @@ def list_three_values_comparison(
                 "purchase_cost_converted": round(float(cost_rep), 2),
                 "market_value_converted": round(float(mkt_rep), 2),
                 "net_book_value_converted": round(float(nbv_rep), 2),
+                "is_fixture": getattr(p, "is_fixture", False),
                 "age_years": age_years,
             }
         )
@@ -1095,6 +1102,7 @@ def generate_report_data(
     report_id: str,
     request: Request,
     currency: str = Query(default="TRY", pattern=r"^(TRY|EUR|USD)$"),
+    scope: str = Query(default="all", pattern=r"^(all|inventory|fixture)$"),
     db: Session = Depends(get_db),
     me: User = Depends(require_permission("report.view")),
 ):
@@ -1107,12 +1115,18 @@ def generate_report_data(
 
     trim_zeros, num_decimals = _get_fmt_prefs(db, me.tenant_id)
 
-    products = db.scalars(
-        select(Product).where(Product.tenant_id == me.tenant_id, Product.is_deleted.is_(False))
-    ).all()
+    p_stmt = select(Product).where(Product.tenant_id == me.tenant_id, Product.is_deleted.is_(False))
+    if scope == "inventory":
+        p_stmt = p_stmt.where(or_(Product.is_fixture == False, Product.is_fixture.is_(None)))
+    elif scope == "fixture":
+        p_stmt = p_stmt.where(Product.is_fixture == True)
+
+    products = db.scalars(p_stmt).all()
+
+    prod_ids = {p.id for p in products}
     assets = db.scalars(
-        select(Asset).where(Asset.tenant_id == me.tenant_id, Asset.is_deleted.is_(False))
-    ).all()
+        select(Asset).where(Asset.tenant_id == me.tenant_id, Asset.is_deleted.is_(False), Asset.product_id.in_(prod_ids) if prod_ids else False)
+    ).all() if prod_ids else []
 
     columns: list[str] = []
     rows: list[list[str]] = []

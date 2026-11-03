@@ -1700,21 +1700,29 @@ def inventory_summary(
         )
     ) or Decimal("0")
 
-    # 4. Hurdaya ayrılmış adetli ürünler
-    scrapped_prod_units = db.scalar(
-        select(func.coalesce(func.sum(Product.quantity), 0)).where(
+    # 4. Hurdaya ayrılmış ürünler (hem adetli ürünler hem de altında seri varlığı açılmamış ürünler)
+    # Seri varlıkları olanlar zaten yukarıdaki 'for a in assets: status_counts[a.status] += 1' ile sayıldı.
+    scrapped_products = db.scalars(
+        select(Product).where(
             Product.tenant_id == me.tenant_id,
             Product.is_deleted.is_(False),
             Product.is_active.is_(True),
-            Product.tracking_type == "quantity",
             Product.status == "scrapped",
         )
-    ) or Decimal("0")
+    ).all()
+
+    for sp in scrapped_products:
+        if sp.tracking_type == "quantity":
+            status_counts["scrapped"] += int(sp.quantity or 0)
+        else:
+            # Seri takipli bir ürün hurdaya çıkarılmışsa ve altında henüz hiç asset oluşmamışsa miktarını ekle
+            asset_count_for_prod = sum(1 for a in assets if a.product_id == sp.id)
+            if asset_count_for_prod == 0:
+                status_counts["scrapped"] += int(sp.quantity or 1)
 
     status_counts["in_warehouse"] += int(wh_units)
     status_counts["assigned"] += int(asg_units)
     status_counts["in_project"] += int(proj_units)
-    status_counts["scrapped"] += int(scrapped_prod_units)
 
     cat_distribution: dict[str, int] = {}
     for p in products:

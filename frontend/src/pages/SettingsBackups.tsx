@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Archive,
-  Download,
   CheckCircle2,
   DatabaseBackup,
   DollarSign,
@@ -535,23 +534,12 @@ export default function SettingsBackupsPage() {
                         </span>
                       </td>
                       <td className="px-4 py-2.5 text-right">
-                        <div className="inline-flex items-center justify-end gap-2">
-                          <a
-                            href={`/api/v1/backups/${b.id}/download`}
-                            download
-                            className="inline-flex items-center gap-1 rounded-lg border border-brand-200 bg-brand-50 px-2.5 py-1 text-xs font-semibold text-brand-700 hover:bg-brand-100 dark:border-indigo-900/60 dark:bg-indigo-950/40 dark:text-indigo-300"
-                            title="Yedek Arşivini Bilgisayara İndir (.ZIP)"
-                          >
-                            <Download className="h-3.5 w-3.5" /> İndir
-                          </a>
-                          <button
-                            onClick={() => verifyBackup.mutate(b.id)}
-                            className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1 text-xs font-semibold hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800"
-                            title="Yedek dosyasının bozulup bozulmadığını kontrol et"
-                          >
-                            <ShieldCheck className="h-3.5 w-3.5 text-emerald-600" /> Doğrula
-                          </button>
-                        </div>
+                        <button
+                          onClick={() => verifyBackup.mutate(b.id)}
+                          className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1 text-xs font-semibold hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800"
+                        >
+                          <ShieldCheck className="h-3.5 w-3.5 text-emerald-600" /> SHA-256 Doğrula
+                        </button>
                       </td>
                     </tr>
                   ))

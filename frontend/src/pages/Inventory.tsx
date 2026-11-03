@@ -20,6 +20,7 @@ import {
   Search,
   Send,
   Sparkles,
+  Star,
   Trash2,
   Upload,
   X,
@@ -751,6 +752,46 @@ export default function InventoryPage() {
       toast.error((err as Error).message)
     } finally {
       e.target.value = ''
+    }
+  }
+
+  const handleDeleteImage = async (imgId: string, e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (!selectedProduct) return
+    if (!confirm('Bu ürün fotoğrafını silmek istediğinize emin misiniz?')) return
+    try {
+      await api(`/products/${selectedProduct.id}/images/${imgId}`, { method: 'DELETE' })
+      toast.success('Fotoğraf silindi.')
+      qc.invalidateQueries({ queryKey: ['product-images', selectedProduct.id] })
+      qc.invalidateQueries({ queryKey: ['products'] })
+    } catch (err) {
+      toast.error((err as Error).message)
+    }
+  }
+
+  const handleSetPrimaryImage = async (imgId: string, e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (!selectedProduct) return
+    try {
+      await api(`/products/${selectedProduct.id}/images/${imgId}/set-primary`, { method: 'POST' })
+      toast.success('Kapak fotoğrafı olarak ayarlandı.')
+      qc.invalidateQueries({ queryKey: ['product-images', selectedProduct.id] })
+      qc.invalidateQueries({ queryKey: ['products'] })
+    } catch (err) {
+      toast.error((err as Error).message)
+    }
+  }
+
+  const handleDeleteDoc = async (docId: string, e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (!selectedProduct) return
+    if (!confirm('Bu belgeyi/faturayı silmek istediğinize emin misiniz?')) return
+    try {
+      await api(`/products/${selectedProduct.id}/documents/${docId}`, { method: 'DELETE' })
+      toast.success('Belge silindi.')
+      qc.invalidateQueries({ queryKey: ['product-docs', selectedProduct.id] })
+    } catch (err) {
+      toast.error((err as Error).message)
     }
   }
 
@@ -2130,8 +2171,33 @@ export default function InventoryPage() {
                             Kapak
                           </span>
                         )}
-                        <div className="absolute inset-0 flex items-center justify-center bg-black/30 opacity-0 transition group-hover:opacity-100">
-                          <Eye className="h-5 w-5 text-white" />
+                        <div className="absolute inset-0 flex flex-col justify-between bg-black/40 p-1.5 opacity-0 transition group-hover:opacity-100">
+                          <div className="flex items-center justify-end gap-1">
+                            {can('product.update') && !img.is_primary && (
+                              <button
+                                type="button"
+                                onClick={(e) => handleSetPrimaryImage(img.id, e)}
+                                title="Kapak Fotoğrafı Yap"
+                                className="rounded bg-black/60 p-1 text-white hover:bg-amber-500 hover:text-white"
+                              >
+                                <Star className="h-3.5 w-3.5" />
+                              </button>
+                            )}
+                            {can('product.update') && (
+                              <button
+                                type="button"
+                                onClick={(e) => handleDeleteImage(img.id, e)}
+                                title="Fotoğrafı Sil"
+                                className="rounded bg-black/60 p-1 text-white hover:bg-rose-600 hover:text-white"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
+                            )}
+                          </div>
+                          <div className="flex items-center justify-center">
+                            <Eye className="h-5 w-5 text-white" />
+                          </div>
+                          <div />
                         </div>
                       </div>
                     ))}
@@ -2185,6 +2251,16 @@ export default function InventoryPage() {
                             <span className="rounded p-1 text-slate-400 hover:text-brand-600">
                               <Eye className="h-3.5 w-3.5" />
                             </span>
+                            {can('product.update') && (
+                              <button
+                                type="button"
+                                onClick={(e) => handleDeleteDoc(d.id, e)}
+                                title="Belgeyi Sil"
+                                className="rounded p-1 text-slate-400 hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-950/40"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
+                            )}
                           </div>
                         </div>
                       )

@@ -191,6 +191,39 @@ def delete_product_image(
     db.commit()
 
 
+@router.post("/products/{product_id}/images/{image_id}/set-primary", status_code=200)
+def set_primary_image(
+    product_id: uuid.UUID,
+    image_id: uuid.UUID,
+    request: Request,
+    db: Session = Depends(get_db),
+    me: User = Depends(require_permission("product.update")),
+):
+    img = db.get(ProductImage, image_id)
+    if not img or img.tenant_id != me.tenant_id or img.product_id != product_id:
+        raise HTTPException(404, "Görsel bulunamadı.")
+    
+    for oi in db.scalars(select(ProductImage).where(ProductImage.product_id == product_id)):
+        oi.is_primary = (oi.id == image_id)
+    
+    prod = db.get(Product, product_id)
+    if prod:
+        prod.primary_image_id = img.file_id
+    
+    write_audit(
+        db,
+        tenant_id=me.tenant_id,
+        user_id=me.id,
+        action="product.image_set_primary",
+        entity="product",
+        entity_id=product_id,
+        new={"image_id": str(image_id)},
+        ip=client_ip(request),
+    )
+    db.commit()
+    return {"detail": "Kapak fotoğrafı güncellendi."}
+
+
 @router.post("/products/{product_id}/documents", response_model=DocumentOut, status_code=201)
 def upload_product_document(
     product_id: uuid.UUID,
@@ -263,3 +296,27 @@ def list_product_documents(
         )
         for d in docs
     ]
+
+
+@router.delete("/products/{product_id}/documents/{document_id}", status_code=204)
+def delete_product_document(
+    product_id: uuid.UUID,
+    document_id: uuid.UUID,
+    request: Request,
+    db: Session = Depends(get_db),
+    me: User = Depends(require_permission("product.update")),
+):
+    doc = db.get(ProductDocument, document_id)
+    if not doc or doc.tenant_id != me.tenant_id or doc.product_id != product_id:
+        raise HTTPException(404, "Belge bulunamadı.")
+    db.delete(doc)
+    write_audit(
+        db,
+        tenant_id=me.tenant_id,
+        user_id=me.id,
+        action="product.document_delete",
+        entity="product",
+        entity_id=product_id,
+        ip=client_ip(request),
+    )
+    db.commit()

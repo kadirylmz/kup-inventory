@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import {
@@ -13,6 +14,7 @@ import {
   UserCheck,
   Wallet,
   Wrench,
+  Coins,
 } from 'lucide-react'
 import { Bar, BarChart, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { api } from '@/lib/api'
@@ -24,6 +26,7 @@ interface SummaryData {
   total_physical_units: number
   purchase_cost_by_currency: Record<string, number>
   market_value_by_currency: Record<string, number>
+  exchange_rates?: Record<string, number>
   status_counts: Record<string, number>
   active_software_licenses: number
   upcoming_license_renewals: number
@@ -33,17 +36,10 @@ interface SummaryData {
 
 const COLORS = ['#4f46e5', '#0ea5e9', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6', '#14b8a6', '#f43f5e']
 
-function fmtCurrencyMap(map: Record<string, number> | undefined) {
-  if (!map) return '0 ₺'
-  const parts: string[] = []
-  if (map.TRY) parts.push(`${fmtMoney(map.TRY)} ₺`)
-  if (map.EUR) parts.push(`${fmtMoney(map.EUR)} €`)
-  if (map.USD) parts.push(`${fmtMoney(map.USD)} $`)
-  return parts.length ? parts.join(' + ') : '0 ₺'
-}
-
 export default function DashboardPage() {
   const nav = useNavigate()
+  const [selectedCurrency, setSelectedCurrency] = useState<'TRY' | 'USD' | 'EUR'>('TRY')
+
   const { data, isLoading, error } = useQuery({
     queryKey: ['inventory-summary'],
     queryFn: () => api<SummaryData>('/inventory/summary'),
@@ -61,10 +57,47 @@ export default function DashboardPage() {
   }
 
   const sc = data?.status_counts || {}
+  const rates = data?.exchange_rates || { TRY: 1.0, USD: 35.0, EUR: 38.0 }
+
+  // Seçilen para birimine göre tek toplam hesaplama
+  const calcConvertedTotal = (map: Record<string, number> | undefined) => {
+    if (!map) return 0
+    let totalInTRY = 0
+    totalInTRY += (map.TRY || 0) * (rates.TRY || 1.0)
+    totalInTRY += (map.USD || 0) * (rates.USD || 35.0)
+    totalInTRY += (map.EUR || 0) * (rates.EUR || 38.0)
+
+    if (selectedCurrency === 'TRY') return totalInTRY
+    const targetRate = rates[selectedCurrency] || 1.0
+    return targetRate > 0 ? totalInTRY / targetRate : totalInTRY
+  }
+
+  const getCurrencySymbol = (cur: 'TRY' | 'USD' | 'EUR') => {
+    switch (cur) {
+      case 'USD': return '$'
+      case 'EUR': return '€'
+      default: return '₺'
+    }
+  }
+
+  const formatConverted = (map: Record<string, number> | undefined) => {
+    const amount = calcConvertedTotal(map)
+    const sym = getCurrencySymbol(selectedCurrency)
+    return `${fmtMoney(amount)} ${sym}`
+  }
+
+  const fmtCurrencyMapOriginal = (map: Record<string, number> | undefined) => {
+    if (!map) return '0 ₺'
+    const parts: string[] = []
+    if (map.TRY) parts.push(`${fmtMoney(map.TRY)} ₺`)
+    if (map.USD) parts.push(`${fmtMoney(map.USD)} $`)
+    if (map.EUR) parts.push(`${fmtMoney(map.EUR)} €`)
+    return parts.length ? parts.join(' + ') : '0 ₺'
+  }
 
   const kpis = [
     {
-      label: 'Toplam Envanter Kalemi (Katalog)',
+      label: 'Toplam Envanter Kalemi',
       value: data?.total_product_cards ?? 0,
       sub: `${data?.total_serial_assets ?? 0} tekil seri numaralı cihaz`,
       icon: Package,
@@ -80,17 +113,17 @@ export default function DashboardPage() {
       onClick: () => nav('/envanter'),
     },
     {
-      label: 'Toplam Alış Maliyeti',
-      value: fmtCurrencyMap(data?.purchase_cost_by_currency),
-      sub: 'Kayıtlı fatura alış maliyetleri toplamı',
+      label: `Toplam Alış Maliyeti (${selectedCurrency})`,
+      value: formatConverted(data?.purchase_cost_by_currency),
+      sub: `Orijinal: ${fmtCurrencyMapOriginal(data?.purchase_cost_by_currency)}`,
       icon: Wallet,
       color: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
       onClick: () => nav('/envanter'),
     },
     {
-      label: 'Güncel İkinci El Piyasa Değeri',
-      value: fmtCurrencyMap(data?.market_value_by_currency),
-      sub: 'Onaylı piyasa değerlemeleri toplamı',
+      label: `Güncel Piyasa Değeri (${selectedCurrency})`,
+      value: formatConverted(data?.market_value_by_currency),
+      sub: `Orijinal: ${fmtCurrencyMapOriginal(data?.market_value_by_currency)}`,
       icon: TrendingUp,
       color: 'bg-amber-500/10 text-amber-600 dark:text-amber-400',
       onClick: () => nav('/envanter'),
@@ -127,15 +160,55 @@ export default function DashboardPage() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Genel Bakış</h1>
           <p className="text-sm text-slate-500">
-            KÜP Prodüksiyon merkezi varlık ve envanter durumu (yalnızca gerçek veritabanı kayıtları)
+            KÜP Prodüksiyon merkezi varlık ve envanter durumu
           </p>
         </div>
-        <button
-          onClick={() => nav('/envanter')}
-          className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-brand-700"
-        >
-          Envanter Yönetimine Git
-        </button>
+        
+        {/* Para Birimi Değiştirici Butonlar */}
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white p-1 text-xs font-semibold shadow-xs dark:border-slate-800 dark:bg-slate-900">
+            <span className="flex items-center gap-1 px-2 text-slate-400">
+              <Coins className="h-3.5 w-3.5" /> Birim:
+            </span>
+            <button
+              onClick={() => setSelectedCurrency('TRY')}
+              className={`rounded-lg px-2.5 py-1 transition ${
+                selectedCurrency === 'TRY'
+                  ? 'bg-brand-600 text-white shadow-xs'
+                  : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800'
+              }`}
+            >
+              ₺ TRY
+            </button>
+            <button
+              onClick={() => setSelectedCurrency('USD')}
+              className={`rounded-lg px-2.5 py-1 transition ${
+                selectedCurrency === 'USD'
+                  ? 'bg-brand-600 text-white shadow-xs'
+                  : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800'
+              }`}
+            >
+              $ USD
+            </button>
+            <button
+              onClick={() => setSelectedCurrency('EUR')}
+              className={`rounded-lg px-2.5 py-1 transition ${
+                selectedCurrency === 'EUR'
+                  ? 'bg-brand-600 text-white shadow-xs'
+                  : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800'
+              }`}
+            >
+              € EUR
+            </button>
+          </div>
+
+          <button
+            onClick={() => nav('/envanter')}
+            className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-brand-700"
+          >
+            Envanter Yönetimine Git
+          </button>
+        </div>
       </div>
 
       {/* Ana KPI Kartları */}
@@ -154,7 +227,7 @@ export default function DashboardPage() {
             </div>
             <div className="mt-4">
               <div className="text-xl font-bold tracking-tight">{k.value}</div>
-              <div className="mt-1 text-xs text-slate-500">{k.sub}</div>
+              <div className="mt-1 truncate text-xs text-slate-500" title={k.sub}>{k.sub}</div>
             </div>
           </button>
         ))}

@@ -1727,6 +1727,10 @@ def inventory_summary(
             brand_distribution[p.brand.name] = brand_distribution.get(p.brand.name, 0) + 1
 
     from app.models.project_license_maintenance import SoftwareLicense
+    from app.api.v1.finance_count_system import get_latest_rates
+
+    rates = get_latest_rates(db, me.tenant_id)
+    rates_dict = {k: float(v) for k, v in rates.items()}
 
     licenses = db.scalars(
         select(SoftwareLicense).where(
@@ -1746,6 +1750,7 @@ def inventory_summary(
         "total_physical_units": float(total_physical_units),
         "purchase_cost_by_currency": {k: float(v) for k, v in cost_by_currency.items()},
         "market_value_by_currency": {k: float(v) for k, v in market_by_currency.items()},
+        "exchange_rates": rates_dict,
         "status_counts": status_counts,
         "active_software_licenses": active_licenses,
         "upcoming_license_renewals": upcoming_renewals,

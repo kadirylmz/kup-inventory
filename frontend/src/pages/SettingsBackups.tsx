@@ -15,7 +15,7 @@ import {
   Sliders,
 } from 'lucide-react'
 import { toast } from 'sonner'
-import { api, apiBlob, ApiError } from '@/lib/api'
+import { api, ApiError } from '@/lib/api'
 import { saveFormatConfigLocal } from '@/lib/format'
 
 interface SystemSettings {
@@ -184,7 +184,16 @@ Mevcut veritabanı ve fotoğraflar yedek dosyasındaki verilerle güncellenecekt
   const handleDownloadBackup = async (b: BackupRow) => {
     try {
       toast.info(`${b.backup_no} hazırlanıyor ve indiriliyor...`)
-      const blob = await apiBlob(`/backups/${b.id}/download`)
+      const res = await fetch(`/api/v1/backups/${b.id}/download`, {
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem('access_token') || ''}`,
+        },
+        credentials: 'same-origin',
+      })
+      if (!res.ok) {
+        throw new Error('Yedek dosyası indirilemedi (404 veya Yetkisiz erişim).')
+      }
+      const blob = await res.blob()
       const url = window.URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url

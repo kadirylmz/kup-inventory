@@ -3,7 +3,6 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Archive,
   Download,
-  Upload,
   CheckCircle2,
   DatabaseBackup,
   DollarSign,
@@ -131,36 +130,6 @@ export default function SettingsBackupsPage() {
     },
     onError: (e: ApiError) => toast.error(e.message),
   })
-
-  const [restoring, setRestoring] = useState(false)
-  const handleRestoreFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-    if (!window.confirm(`DİKKAT: "${file.name}" yedeği sisteme yüklenecektir.
-
-Mevcut veritabanı ve fotoğraflar yedek dosyasındaki verilerle güncellenecektir. Onaylıyor musunuz?`)) {
-      e.target.value = ''
-      return
-    }
-    const fd = new FormData()
-    fd.append('file', file)
-    try {
-      setRestoring(true)
-      await api('/backups/restore', {
-        method: 'POST',
-        body: fd,
-      })
-      toast.success('Yedek başarıyla geri yüklendi! Sayfa yenileniyor...')
-      setTimeout(() => {
-        window.location.reload()
-      }, 1500)
-    } catch (err) {
-      toast.error((err as Error).message)
-    } finally {
-      setRestoring(false)
-      e.target.value = ''
-    }
-  }
 
   const runBackup = useMutation({
     mutationFn: () => api<{ backup_no: string }>('/backups/run', { method: 'POST' }),
@@ -525,19 +494,13 @@ Mevcut veritabanı ve fotoğraflar yedek dosyasındaki verilerle güncellenecekt
                 </div>
               </div>
             </div>
-            <div className="flex items-center gap-2">
-              <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-slate-300 bg-white px-3.5 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">
-                <Upload className="h-4 w-4 text-brand-600" /> {restoring ? 'Yükleniyor...' : 'Yedek Dosyası Yükle (.ZIP)'}
-                <input type="file" accept=".zip" onChange={handleRestoreFile} className="hidden" disabled={restoring} />
-              </label>
-              <button
-                onClick={() => runBackup.mutate()}
-                disabled={runBackup.isPending}
-                className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
-              >
-                <Archive className="h-4 w-4" /> Şimdi Manuel Yedek Al
-              </button>
-            </div>
+            <button
+              onClick={() => runBackup.mutate()}
+              disabled={runBackup.isPending}
+              className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
+            >
+              <Archive className="h-4 w-4" /> Şimdi Manuel Yedek Al
+            </button>
           </div>
 
           <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xs dark:border-slate-800 dark:bg-slate-900">

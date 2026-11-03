@@ -1561,12 +1561,8 @@ def run_manual_backup(
         or 0,
     }
 
-    from app.core.backup_service import dump_tenant_data
-    full_data = dump_tenant_data(db, me.tenant_id)
-
     with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
         zf.writestr("database_snapshot.json", json.dumps(snapshot, indent=2))
-        zf.writestr("data_dump.json", json.dumps(full_data, ensure_ascii=False))
         up_dir = Path(s.upload_dir)
         if up_dir.exists():
             for root, _, files in os.walk(up_dir):
@@ -1645,38 +1641,6 @@ def download_backup_file(
         filename=filename,
         media_type="application/zip",
     )
-
-@router.post("/backups/restore")
-def restore_backup_archive(
-    request: Request,
-    file: UploadFile = File(...),
-    db: Session = Depends(get_db),
-    me: User = Depends(require_permission("backup.manage")),
-):
-    """Kullanıcının yüklediği .ZIP yedek dosyasından tüm veritabanını ve görselleri geri yükler."""
-    s = get_settings()
-    from app.core.backup_service import restore_tenant_data
-
-    zip_bytes = file.file.read()
-    if not zip_bytes:
-        raise HTTPException(422, "Yüklenen yedek dosyası boş.")
-
-    try:
-        dump = restore_tenant_data(db, zip_bytes, me.tenant_id, s.upload_dir)
-    except Exception as e:
-        raise HTTPException(400, f"Yedek geri yüklenirken hata oluştu: {str(e)}")
-
-    write_audit(
-        db,
-        tenant_id=me.tenant_id,
-        user_id=me.id,
-        action="backup.restore",
-        entity="backup_record",
-        new={"filename": file.filename, "size": len(zip_bytes)},
-        ip=client_ip(request),
-    )
-    db.commit()
-    return {"message": "Yedek başarıyla geri yüklendi. Tüm veriler ve fotoğraflar güncellendi."}
 
 
 # --- SİSTEM AYARLARI ---

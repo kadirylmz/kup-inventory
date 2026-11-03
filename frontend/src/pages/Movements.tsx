@@ -232,16 +232,14 @@ export default function MovementsPage() {
   const handleDeleteMovement = async (m: MovementRecord) => {
     if (
       !window.confirm(
-        `${m.movement_no} numaralı stok hareketini silmek istediğinize emin misiniz? (Bu işlem hareketin etkilediği stok bakiyesini de geri alır.)`,
+        `${m.movement_no} numaralı stok hareket kaydını geçmişten silmek istediğinize emin misiniz?\n\n(Not: Bu işlem sadece kayıt defterini temizler, depodaki ve projelerdeki mevcut stoklarınıza dokunmaz.)`,
       )
     )
       return
     try {
       await api(`/movements/${m.id}`, { method: 'DELETE' })
-      toast.success('Stok hareketi silindi.')
+      toast.success('Stok hareket kaydı silindi.')
       qc.invalidateQueries({ queryKey: ['movements'] })
-      qc.invalidateQueries({ queryKey: ['warehouse-stock'] })
-      qc.invalidateQueries({ queryKey: ['products'] })
     } catch (err) {
       toast.error((err as Error).message)
     }

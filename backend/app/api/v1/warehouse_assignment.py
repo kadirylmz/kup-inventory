@@ -872,15 +872,20 @@ def bulk_delete_movements(
 def delete_movement(
     movement_id: uuid.UUID,
     request: Request,
+    revert_stock: bool = False,
     db: Session = Depends(get_db),
     me: User = Depends(require_permission("movement.approve")),
 ):
-    """Stok hareketini siler ve varsa etkilediği depo bakiyesini geri alır."""
+    """
+    Stok hareket kaydını siler.
+    revert_stock=True verilmedikçe sadece hareket defteri kaydını siler;
+    mevcut depo bakiyelerini veya projedeki malzemeleri bozmaz.
+    """
     mov = db.get(StockMovement, movement_id)
     if not mov or mov.tenant_id != me.tenant_id:
         raise HTTPException(404, "Stok hareketi bulunamadı.")
 
-    if not mov.is_reversed and mov.movement_type != "reversal":
+    if revert_stock and not mov.is_reversed and mov.movement_type != "reversal":
         for item in mov.items:
             prod = item.product
             if prod and prod.tracking_type == "quantity":
@@ -907,7 +912,7 @@ def delete_movement(
         action="movement.delete",
         entity="stock_movement",
         entity_id=movement_id,
-        old={"movement_no": mov_no},
+        old={"movement_no": mov_no, "reverted_stock": revert_stock},
         ip=client_ip(request),
     )
     db.commit()

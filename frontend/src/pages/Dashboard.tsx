@@ -12,9 +12,9 @@ import {
   Package,
   TrendingUp,
   UserCheck,
-  Wallet,
   Wrench,
   Coins,
+  Armchair,
 } from 'lucide-react'
 import { Bar, BarChart, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { api } from '@/lib/api'
@@ -24,8 +24,14 @@ interface SummaryData {
   total_product_cards: number
   total_serial_assets: number
   total_physical_units: number
+  total_fixture_units?: number
   purchase_cost_by_currency: Record<string, number>
   market_value_by_currency: Record<string, number>
+  operational_market_value_by_currency?: Record<string, number>
+  fixture_market_value_by_currency?: Record<string, number>
+  book_value_by_currency?: Record<string, number>
+  fixture_cost_by_currency?: Record<string, number>
+  fixture_book_value_by_currency?: Record<string, number>
   exchange_rates?: Record<string, number>
   status_counts: Record<string, number>
   active_software_licenses: number
@@ -113,20 +119,20 @@ export default function DashboardPage() {
       onClick: () => nav('/envanter'),
     },
     {
-      label: `Toplam Alış Maliyeti (${selectedCurrency})`,
-      value: formatConverted(data?.purchase_cost_by_currency),
-      sub: `Orijinal: ${fmtCurrencyMapOriginal(data?.purchase_cost_by_currency)}`,
-      icon: Wallet,
+      label: `Envanter Değeri (${selectedCurrency})`,
+      value: formatConverted(data?.operational_market_value_by_currency ?? data?.market_value_by_currency),
+      sub: `Orijinal: ${fmtCurrencyMapOriginal(data?.operational_market_value_by_currency ?? data?.market_value_by_currency)}`,
+      icon: TrendingUp,
       color: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
       onClick: () => nav('/envanter'),
     },
     {
-      label: `Güncel Piyasa Değeri (${selectedCurrency})`,
-      value: formatConverted(data?.market_value_by_currency),
-      sub: `Orijinal: ${fmtCurrencyMapOriginal(data?.market_value_by_currency)}`,
-      icon: TrendingUp,
-      color: 'bg-amber-500/10 text-amber-600 dark:text-amber-400',
-      onClick: () => nav('/envanter'),
+      label: `Demirbaş Değeri (${selectedCurrency})`,
+      value: formatConverted(data?.fixture_market_value_by_currency),
+      sub: `Orijinal: ${fmtCurrencyMapOriginal(data?.fixture_market_value_by_currency)} (${data?.total_fixture_units ?? 0} demirbaş)`,
+      icon: Armchair,
+      color: 'bg-purple-500/10 text-purple-600 dark:text-purple-400',
+      onClick: () => nav('/demirbaslar'),
     },
   ]
 
@@ -212,7 +218,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Ana KPI Kartları */}
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {kpis.map(k => (
           <button
             key={k.label}

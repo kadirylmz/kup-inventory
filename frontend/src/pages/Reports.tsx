@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { FileText, Printer, QrCode, Scale } from 'lucide-react'
+import { FileText, Printer, QrCode, Scale, Armchair, Package } from 'lucide-react'
 import { api } from '@/lib/api'
 import { fmtMoney, fmtQty } from '@/lib/format'
 
@@ -31,6 +31,7 @@ interface AssetRow {
 
 export default function ReportsPage() {
   const [selectedReportId, setSelectedReportId] = useState('1_general_inventory')
+  const [scope, setScope] = useState<'all' | 'inventory' | 'fixture'>('all')
   const [currency, setCurrency] = useState<'TRY' | 'EUR' | 'USD'>('TRY')
   const [mode, setMode] = useState<'reports' | 'qr_labels'>('reports')
 
@@ -40,8 +41,8 @@ export default function ReportsPage() {
   })
 
   const { data: reportData, isLoading } = useQuery({
-    queryKey: ['report-data', selectedReportId, currency],
-    queryFn: () => api<ReportData>(`/reports/${selectedReportId}?currency=${currency}`),
+    queryKey: ['report-data', selectedReportId, currency, scope],
+    queryFn: () => api<ReportData>(`/reports/${selectedReportId}?currency=${currency}&scope=${scope}`),
     enabled: mode === 'reports',
   })
 
@@ -82,19 +83,43 @@ export default function ReportsPage() {
           </div>
 
           {mode === 'reports' && (
-            <div className="flex rounded-lg border border-slate-200 bg-white p-1 dark:border-slate-800 dark:bg-slate-900">
-              {(['TRY', 'EUR', 'USD'] as const).map(c => (
+            <>
+              {/* Kapsam Filtresi: Tümü / Envanter / Demirbaş */}
+              <div className="flex rounded-lg border border-slate-200 bg-white p-1 text-xs font-medium dark:border-slate-800 dark:bg-slate-900">
                 <button
-                  key={c}
-                  onClick={() => setCurrency(c)}
-                  className={`rounded-md px-2.5 py-1 text-xs font-bold ${
-                    currency === c ? 'bg-brand-600 text-white' : 'text-slate-600 dark:text-slate-300'
-                  }`}
+                  onClick={() => setScope('all')}
+                  className={`rounded-md px-2.5 py-1 ${scope === 'all' ? 'bg-brand-600 text-white font-bold' : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800'}`}
                 >
-                  {c}
+                  Tümü
                 </button>
-              ))}
-            </div>
+                <button
+                  onClick={() => setScope('inventory')}
+                  className={`flex items-center gap-1 rounded-md px-2.5 py-1 ${scope === 'inventory' ? 'bg-brand-600 text-white font-bold' : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800'}`}
+                >
+                  <Package className="h-3 w-3" /> Envanter
+                </button>
+                <button
+                  onClick={() => setScope('fixture')}
+                  className={`flex items-center gap-1 rounded-md px-2.5 py-1 ${scope === 'fixture' ? 'bg-purple-600 text-white font-bold' : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800'}`}
+                >
+                  <Armchair className="h-3 w-3" /> Demirbaş
+                </button>
+              </div>
+
+              <div className="flex rounded-lg border border-slate-200 bg-white p-1 dark:border-slate-800 dark:bg-slate-900">
+                {(['TRY', 'EUR', 'USD'] as const).map(c => (
+                  <button
+                    key={c}
+                    onClick={() => setCurrency(c)}
+                    className={`rounded-md px-2.5 py-1 text-xs font-bold ${
+                      currency === c ? 'bg-brand-600 text-white' : 'text-slate-600 dark:text-slate-300'
+                    }`}
+                  >
+                    {c}
+                  </button>
+                ))}
+              </div>
+            </>
           )}
 
           <button

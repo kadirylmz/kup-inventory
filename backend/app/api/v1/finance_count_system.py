@@ -1637,9 +1637,12 @@ def download_backup_file(
     b = db.get(BackupRecord, backup_id)
     if not b or b.tenant_id != me.tenant_id:
         raise HTTPException(404, "Yedek kaydı bulunamadı.")
-    p = Path(b.file_path)
+    p = Path(b.file_path).resolve()
     if not p.is_file():
-        raise HTTPException(404, "Yedek arşiv dosyası sunucuda bulunamadı.")
+        from app.core.config import get_settings
+        p = (Path(get_settings().upload_dir).parent / "backups" / Path(b.file_path).name).resolve()
+    if not p.is_file():
+        raise HTTPException(404, f"Yedek arşiv dosyası sunucuda bulunamadı ({b.file_path}).")
     filename = f"{b.backup_no}.zip"
     return FileResponse(
         path=str(p),

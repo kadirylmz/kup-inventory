@@ -104,7 +104,7 @@ export default function SettingsBackupsPage() {
 
   const copyBackupPath = (path: string) => {
     navigator.clipboard.writeText(path)
-    toast.success('Dosya yolu panoya kopyalandı! Dosya Gezgini adres çubuğuna yapıştırıp açabilirsiniz.')
+    toast.success('Klasör yolu panoya kopyalandı! (Win+E ile Dosya Gezgini adres çubuğuna yapıştırıp klasörü doğrudan açabilirsiniz)')
   }
 
   const verifyBackup = useMutation({
@@ -455,7 +455,7 @@ export default function SettingsBackupsPage() {
               onClick={() => copyBackupPath('storage\\backups')}
               className="inline-flex items-center gap-1 font-semibold text-brand-700 hover:underline dark:text-indigo-300"
             >
-              <Copy className="h-3.5 w-3.5" /> Klasör Yolunu Kopyala
+              <FolderOpen className="h-3.5 w-3.5" /> Klasör Yolunu Aç / Kopyala
             </button>
           </div>
 

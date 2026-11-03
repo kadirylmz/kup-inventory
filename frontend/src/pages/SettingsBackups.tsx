@@ -12,6 +12,7 @@ import {
   Save,
   ShieldCheck,
   Sliders,
+  Trash2,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { api, ApiError } from '@/lib/api'
@@ -184,6 +185,19 @@ export default function SettingsBackupsPage() {
     },
     onError: (e: ApiError) => toast.error(e.message),
   })
+
+  const handleDeleteBackup = async (b: BackupRow) => {
+    if (!window.confirm(`"${b.backup_no}" numaralı yedeği silmek istediğinize emin misiniz? (Sunucudaki ZIP dosyası da kalıcı olarak silinecektir)`)) {
+      return
+    }
+    try {
+      await api(`/backups/${b.id}`, { method: 'DELETE' })
+      toast.success(`${b.backup_no} başarıyla silindi.`)
+      qc.invalidateQueries({ queryKey: ['backups'] })
+    } catch (err) {
+      toast.error((err as Error).message)
+    }
+  }
 
   // Döviz Kurları (EUR ve USD)
   interface ExchangeRateRow {
@@ -600,12 +614,21 @@ export default function SettingsBackupsPage() {
                         </span>
                       </td>
                       <td className="px-4 py-2.5 text-right">
-                        <button
-                          onClick={() => verifyBackup.mutate(b.id)}
-                          className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1 text-xs font-semibold hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800"
-                        >
-                          <ShieldCheck className="h-3.5 w-3.5 text-emerald-600" /> SHA-256 Doğrula
-                        </button>
+                        <div className="inline-flex items-center justify-end gap-2">
+                          <button
+                            onClick={() => verifyBackup.mutate(b.id)}
+                            className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1 text-xs font-semibold hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800"
+                          >
+                            <ShieldCheck className="h-3.5 w-3.5 text-emerald-600" /> SHA-256 Doğrula
+                          </button>
+                          <button
+                            onClick={() => handleDeleteBackup(b)}
+                            className="inline-flex items-center rounded-lg border border-rose-200 p-1 text-xs text-rose-600 hover:bg-rose-50 dark:border-rose-900/60 dark:hover:bg-rose-950/40"
+                            title="Yedeği Sil"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))

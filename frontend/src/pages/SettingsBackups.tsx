@@ -181,6 +181,33 @@ Mevcut veritabanı ve fotoğraflar yedek dosyasındaki verilerle güncellenecekt
     onError: (e: ApiError) => toast.error(e.message),
   })
 
+  const handleDownloadBackup = async (b: BackupRow) => {
+    try {
+      toast.info(`${b.backup_no} hazırlanıyor ve indiriliyor...`)
+      const res = await fetch(`/api/v1/backups/${b.id}/download`, {
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem('access_token') || ''}`,
+        },
+        credentials: 'same-origin',
+      })
+      if (!res.ok) {
+        throw new Error('Yedek dosyası indirilemedi (404 veya Yetkisiz erişim).')
+      }
+      const blob = await res.blob()
+      const url = window.URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `${b.backup_no}.zip`
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      window.URL.revokeObjectURL(url)
+      toast.success(`${b.backup_no} başarıyla indirildi.`)
+    } catch (err) {
+      toast.error((err as Error).message)
+    }
+  }
+
   const handleDeleteBackup = (b: BackupRow) => {
     if (!window.confirm(`"${b.backup_no}" numaralı yedek dosyasını kalıcı olarak silmek istediğinize emin misiniz?`)) return
     deleteBackup.mutate(b.id)
@@ -600,14 +627,14 @@ Mevcut veritabanı ve fotoğraflar yedek dosyasındaki verilerle güncellenecekt
                       </td>
                       <td className="px-4 py-2.5 text-right">
                         <div className="inline-flex items-center justify-end gap-2">
-                          <a
-                            href={`/api/v1/backups/${b.id}/download`}
-                            download
+                          <button
+                            type="button"
+                            onClick={() => handleDownloadBackup(b)}
                             className="inline-flex items-center gap-1 rounded-lg border border-brand-200 bg-brand-50 px-2.5 py-1 text-xs font-semibold text-brand-700 hover:bg-brand-100 dark:border-indigo-900/60 dark:bg-indigo-950/40 dark:text-indigo-300"
                             title="Yedek Arşivini Bilgisayara İndir (.ZIP)"
                           >
                             <Download className="h-3.5 w-3.5" /> İndir
-                          </a>
+                          </button>
                           <button
                             onClick={() => verifyBackup.mutate(b.id)}
                             className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1 text-xs font-semibold hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800"

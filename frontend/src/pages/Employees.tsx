@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Building, Eye, Loader2, Plus, UserSquare, X } from 'lucide-react'
+import { Building, Eye, Loader2, Plus, Trash2, UserSquare, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { api } from '@/lib/api'
 import { useAuth } from '@/lib/auth'
@@ -107,6 +107,21 @@ export default function EmployeesPage() {
     }
   }
 
+  const handleDeleteEmployee = async (emp: EmployeeItem) => {
+    if (emp.active_assignment_count > 0) {
+      toast.error(`Bu personelin üzerinde ${emp.active_assignment_count} aktif zimmetli ürün var. Önce zimmetleri iade almalısınız.`)
+      return
+    }
+    if (!confirm(`"${emp.full_name}" personelini sistemden kalıcı olarak silmek istediğinize emin misiniz?`)) return
+    try {
+      await api(`/employees/${emp.id}`, { method: 'DELETE' })
+      toast.success(`${emp.full_name} başarıyla silindi.`)
+      qc.invalidateQueries({ queryKey: ['employees'] })
+    } catch (err) {
+      toast.error((err as Error).message)
+    }
+  }
+
   const toggleActive = async (emp: EmployeeItem) => {
     try {
       await api(`/employees/${emp.id}`, {
@@ -207,12 +222,21 @@ export default function EmployeesPage() {
                         <Eye className="h-3.5 w-3.5" /> Zimmetlerini Gör
                       </button>
                       {can('employee.manage') && (
-                        <button
-                          onClick={() => toggleActive(emp)}
-                          className="text-xs text-brand-600 hover:underline"
-                        >
-                          {emp.is_active ? 'Pasifleştir' : 'Aktifleştir'}
-                        </button>
+                        <>
+                          <button
+                            onClick={() => toggleActive(emp)}
+                            className="text-xs text-brand-600 hover:underline"
+                          >
+                            {emp.is_active ? 'Pasifleştir' : 'Aktifleştir'}
+                          </button>
+                          <button
+                            onClick={() => handleDeleteEmployee(emp)}
+                            title="Personeli Sil"
+                            className="inline-flex items-center gap-0.5 text-xs text-rose-600 hover:underline"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" /> Sil
+                          </button>
+                        </>
                       )}
                     </div>
                   </td>

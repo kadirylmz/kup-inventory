@@ -1649,6 +1649,7 @@ def open_backup_folder_in_os(
 # --- SİSTEM AYARLARI ---
 class SettingsUpdateIn(BaseModel):
     company_name: str = "KÜP Prodüksiyon"
+    logo_url: str | None = None
     default_reporting_currency: str = "TRY"
     auto_backup_enabled: bool = True
     auto_backup_time: str = "02:00"

@@ -1260,6 +1260,47 @@ def update_employee(
     return EmployeeOut.model_validate(emp)
 
 
+@router.delete("/employees/{employee_id}")
+def delete_employee(
+    employee_id: uuid.UUID,
+    request: Request,
+    db: Session = Depends(get_db),
+    me: User = Depends(require_permission("employee.manage")),
+):
+    emp = db.get(Employee, employee_id)
+    if not emp or emp.tenant_id != me.tenant_id or emp.is_deleted:
+        raise HTTPException(404, "Personel bulunamadı.")
+
+    active_assignments = db.scalar(
+        select(func.count(Assignment.id)).where(
+            Assignment.tenant_id == me.tenant_id,
+            Assignment.employee_id == emp.id,
+            Assignment.is_deleted.is_(False),
+            Assignment.status == "delivered",
+        )
+    ) or 0
+    if active_assignments > 0:
+        raise HTTPException(
+            400,
+            f"Bu personelin üzerinde {active_assignments} adet aktif zimmet kaydı bulunmaktadır. Önce zimmetleri iade almalısınız.",
+        )
+
+    emp.is_deleted = True
+    emp.is_active = False
+    write_audit(
+        db,
+        tenant_id=me.tenant_id,
+        user_id=me.id,
+        action="employee.delete",
+        entity="employee",
+        entity_id=emp.id,
+        old={"full_name": emp.full_name},
+        ip=client_ip(request),
+    )
+    db.commit()
+    return {"message": "Personel başarıyla silindi."}
+
+
 # ==========================================
 # 5. ASSIGNMENTS (ZİMMET TESLİM & İADE)
 # ==========================================

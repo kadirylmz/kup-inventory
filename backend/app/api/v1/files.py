@@ -1,10 +1,12 @@
 import hashlib
+import io
 import os
 import uuid
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
+from PIL import Image, ImageOps
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -46,6 +48,52 @@ def _verify_and_store(upload: UploadFile, allowed_map: dict, tenant_id: uuid.UUI
         raise HTTPException(422, "Dosya içeriği (magic-byte) uzantısıyla uyuşmuyor.")
     if ext == ".webp" and data[8:12] != b"WEBP":
         raise HTTPException(422, "Geçersiz WEBP dosyası.")
+
+    # Fotoğraflar için otomatik boyut ve dosya boyutu optimizasyonu (Disk tasarrufu & Hızlı yükleme)
+    if ext in ALLOWED_IMAGES and ext != ".pdf":
+        try:
+            with Image.open(io.BytesIO(data)) as im:
+                # EXIF oryantasyonunu koru (telefonla çekilen fotoğrafların yan/ters dönmemesi için)
+                im = ImageOps.exif_transpose(im)
+                
+                # Saydamlık kontrolü: RGBA ise şeffaflığı koru veya RGB'ye çevir
+                save_format = "JPEG"
+                save_ext = ".jpg"
+                save_mime = "image/jpeg"
+                if ext == ".png" and im.mode in ("RGBA", "LA"):
+                    save_format = "PNG"
+                    save_ext = ".png"
+                    save_mime = "image/png"
+                elif ext == ".webp":
+                    save_format = "WEBP"
+                    save_ext = ".webp"
+                    save_mime = "image/webp"
+                else:
+                    if im.mode in ("RGBA", "P", "LA"):
+                        im = im.convert("RGB")
+                    save_format = "JPEG"
+                    save_ext = ".jpg"
+                    save_mime = "image/jpeg"
+
+                # Maksimum çözünürlük sınırı (en uzun kenar maks 1600px - ürün ve cihaz için fazlasıyla net)
+                max_dim = 1600
+                if max(im.size) > max_dim:
+                    im.thumbnail((max_dim, max_dim), Image.Resampling.LANCZOS)
+
+                out_buf = io.BytesIO()
+                if save_format == "JPEG":
+                    im.save(out_buf, format="JPEG", quality=82, optimize=True)
+                elif save_format == "WEBP":
+                    im.save(out_buf, format="WEBP", quality=80)
+                else:
+                    im.save(out_buf, format="PNG", optimize=True)
+
+                data = out_buf.getvalue()
+                ext = save_ext
+                expected_mime = save_mime
+        except Exception:
+            # Herhangi bir işleme hatasında orijinal veriyi koru
+            pass
 
     sha = hashlib.sha256(data).hexdigest()
     target_dir = Path(s.upload_dir) / str(tenant_id)

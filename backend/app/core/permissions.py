@@ -41,7 +41,18 @@ SYSTEM_ROLES: dict[str, dict] = {
     },
     "TECHNICIAN": {
         "name": "Teknisyen",
-        "perms": ["product.view", "product.create", "product.update", "movement.create", "maintenance.view", "maintenance.manage"],
+        "perms": [
+            "product.view",
+            "product.create",
+            "product.update",
+            "fixture.view",
+            "fixture.create",
+            "fixture.update",
+            "fixture.delete",
+            "movement.create",
+            "maintenance.view",
+            "maintenance.manage",
+        ],
     },
     "PROJECT_MANAGER": {
         "name": "Proje Yöneticisi",

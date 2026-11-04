@@ -1516,13 +1516,16 @@ def create_assignment(
             tenant_id=me.tenant_id,
             assignment_no=assign_no,
             employee_id=emp.id,
-            from_warehouse_id=from_wh.id,
             delivered_by_user_id=me.id,
             expected_return_date=body.expected_return_date,
             status="active",
             note=body.note,
             items=a_items,
         )
+        try:
+            setattr(asg, 'from_warehouse_id', from_wh.id)
+        except Exception:
+            pass
         db.add(asg)
 
         mov = StockMovement(

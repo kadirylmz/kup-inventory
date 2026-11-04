@@ -266,6 +266,8 @@ class AssignmentItemOut(BaseModel):
 class AssignmentOut(BaseModel):
     id: uuid.UUID
     assignment_no: str
+    from_warehouse_id: uuid.UUID | None = None
+    from_warehouse_name: str | None = None
     employee_id: uuid.UUID
     employee_name: str
     employee_department: str | None

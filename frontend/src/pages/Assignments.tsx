@@ -25,6 +25,8 @@ interface AssignmentLine {
 interface AssignmentRecord {
   id: string
   assignment_no: string
+  from_warehouse_id: string | null
+  from_warehouse_name: string | null
   employee_id: string
   employee_name: string
   employee_department: string | null
@@ -453,7 +455,7 @@ export default function AssignmentsPage() {
                                   <button
                                     onClick={() => {
                                       setRetQty(String(rem))
-                                      setRetWhId(warehouses[0]?.id || '')
+                                      setRetWhId(asg.from_warehouse_id || warehouses[0]?.id || '')
                                       setReturnModal({ assignment: asg, item: it })
                                     }}
                                     className="inline-flex items-center gap-1 rounded bg-emerald-600 px-2.5 py-1 font-semibold text-white hover:bg-emerald-700"
@@ -696,7 +698,7 @@ export default function AssignmentsPage() {
                 <X className="h-5 w-5 text-slate-400" />
               </button>
             </div>
-            <div className="rounded-lg bg-slate-50 p-3 text-xs dark:bg-slate-800">
+            <div className="rounded-lg bg-slate-50 p-3 text-xs dark:bg-slate-800 space-y-1">
               <div>
                 <strong>Personel:</strong> {returnModal.assignment.employee_name}
               </div>
@@ -704,6 +706,11 @@ export default function AssignmentsPage() {
                 <strong>Ürün:</strong> {returnModal.item.product_name}{' '}
                 {returnModal.item.serial_number && `(SN: ${returnModal.item.serial_number})`}
               </div>
+              {returnModal.assignment.from_warehouse_name && (
+                <div className="text-slate-600 dark:text-slate-400">
+                  <strong>Çıkış Deposu:</strong> {returnModal.assignment.from_warehouse_name}
+                </div>
+              )}
             </div>
 
             <label className="block text-sm font-medium">
@@ -721,6 +728,14 @@ export default function AssignmentsPage() {
                 ))}
               </select>
             </label>
+
+            {returnModal.assignment.from_warehouse_id &&
+              retWhId &&
+              returnModal.assignment.from_warehouse_id !== retWhId && (
+                <div className="rounded-lg border border-amber-300 bg-amber-50 p-2.5 text-xs text-amber-800 dark:border-amber-700/60 dark:bg-amber-950/30 dark:text-amber-300">
+                  ⚠️ <strong>Farklı Depoya İade Uyarısı:</strong> Bu ürün <strong>{returnModal.assignment.from_warehouse_name}</strong> deposundan zimmetlenmiştir. İadeyi <strong>{warehouses.find(w => w.id === retWhId)?.name}</strong> deposuna almak üzeresiniz. Onaylarsanız stok bu yeni depoya girecektir.
+                </div>
+              )}
 
             <div className="grid grid-cols-2 gap-3">
               <label className="block text-sm font-medium">

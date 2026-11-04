@@ -1338,6 +1338,8 @@ def _to_assignment_out(a: Assignment, dept_map: dict[uuid.UUID, str]) -> Assignm
     return AssignmentOut(
         id=a.id,
         assignment_no=a.assignment_no,
+        from_warehouse_id=a.from_warehouse_id,
+        from_warehouse_name=a.from_warehouse.name if a.from_warehouse else None,
         employee_id=a.employee_id,
         employee_name=emp.full_name if emp else "",
         employee_department=dept_name,
@@ -1514,6 +1516,7 @@ def create_assignment(
             tenant_id=me.tenant_id,
             assignment_no=assign_no,
             employee_id=emp.id,
+            from_warehouse_id=from_wh.id,
             delivered_by_user_id=me.id,
             expected_return_date=body.expected_return_date,
             status="active",

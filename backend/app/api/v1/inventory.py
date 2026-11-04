@@ -1028,10 +1028,24 @@ def update_product(
     if not p or p.tenant_id != me.tenant_id or p.is_deleted:
         raise HTTPException(404, "Ürün bulunamadı.")
 
-    if p.is_fixture and not has_permission(me, "fixture.update"):
-        raise HTTPException(403, "Demirbaşları güncelleme yetkiniz yok.")
-    if not p.is_fixture and not has_permission(me, "product.update"):
-        raise HTTPException(403, "Envanter ürünlerini güncelleme yetkiniz yok.")
+    updates = body.model_dump(exclude_unset=True)
+
+    # Eğer demirbaş durumu değiştiriliyorsa (envanter <-> demirbaş kaydırma)
+    if "is_fixture" in updates and updates["is_fixture"] != p.is_fixture:
+        target_fixture = updates["is_fixture"]
+        if target_fixture:
+            # Envanterden demirbaşa aktarım: hem envanter güncelleme hem de demirbaş oluşturma/güncelleme yetkisi kontrolü
+            if not (has_permission(me, "product.update") or has_permission(me, "fixture.create") or has_permission(me, "fixture.update")):
+                raise HTTPException(403, "Bu ürünü demirbaşa kaydırma yetkiniz yok.")
+        else:
+            # Demirbaştan envantere aktarım
+            if not (has_permission(me, "fixture.update") or has_permission(me, "product.create") or has_permission(me, "product.update")):
+                raise HTTPException(403, "Bu demirbaşı envantere kaydırma yetkiniz yok.")
+    else:
+        if p.is_fixture and not has_permission(me, "fixture.update"):
+            raise HTTPException(403, "Demirbaşları güncelleme yetkiniz yok.")
+        if not p.is_fixture and not has_permission(me, "product.update"):
+            raise HTTPException(403, "Envanter ürünlerini güncelleme yetkiniz yok.")
 
     old = {
         "name": p.name,
@@ -1039,7 +1053,6 @@ def update_product(
         "status": p.status,
         "is_active": p.is_active,
     }
-    updates = body.model_dump(exclude_unset=True)
     attrs = updates.pop("attributes", None)
     b_name = updates.pop("brand_name", None)
     m_name = updates.pop("model_name", None)

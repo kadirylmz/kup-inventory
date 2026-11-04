@@ -21,6 +21,7 @@ import {
   Send,
   Sparkles,
   Star,
+  Tag,
   Trash2,
   Upload,
   X,
@@ -610,6 +611,35 @@ export default function InventoryPage({ isFixtureOnly = false }: { isFixtureOnly
     }
   }
 
+  const handleToggleFixture = async (p: ProductItem) => {
+    const willBeFixture = !p.is_fixture
+    const actionText = willBeFixture
+      ? `"${p.name}" (${p.inventory_code}) ürününü ŞİRKET DEMİRBAŞLARINA kaydırmak istediğinize emin misiniz?`
+      : `"${p.name}" (${p.inventory_code}) demirbaşını TEKNİK ENVANTERE kaydırmak istediğinize emin misiniz?`
+
+    if (!window.confirm(actionText)) {
+      return
+    }
+
+    try {
+      await api(`/products/${p.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ is_fixture: willBeFixture }),
+      })
+      toast.success(
+        willBeFixture
+          ? `"${p.name}" başarıyla Şirket Demirbaşlarına aktarıldı.`
+          : `"${p.name}" başarıyla Teknik Envantere aktarıldı.`
+      )
+      if (selectedProduct?.id === p.id) {
+        setSelectedProduct({ ...selectedProduct, is_fixture: willBeFixture })
+      }
+      refreshAll()
+    } catch (err) {
+      toast.error((err as Error).message)
+    }
+  }
+
   const openAssetEditModal = (a: AssetItem) => {
     setEditingAsset(a)
     setASerial(a.serial_number)
@@ -859,9 +889,9 @@ export default function InventoryPage({ isFixtureOnly = false }: { isFixtureOnly
   const matchedBrand = brands.find(b => b.name.toLowerCase() === fBrandName.trim().toLowerCase())
   const suggestedModels = matchedBrand ? models.filter(m => m.brand_id === matchedBrand.id) : models
 
-  const canCreate = isFixtureOnly ? can('fixture.create') : can('product.create')
-  const canUpdate = isFixtureOnly ? can('fixture.update') : can('product.update')
-  const canDelete = isFixtureOnly ? can('fixture.delete') : can('product.delete')
+  const canCreate = isFixtureOnly ? (can('fixture.create') || can('product.create')) : can('product.create')
+  const canUpdate = isFixtureOnly ? (can('fixture.update') || can('product.update')) : (can('product.update') || can('fixture.update'))
+  const canDelete = isFixtureOnly ? (can('fixture.delete') || can('product.delete')) : can('product.delete')
 
   return (
     <div className="space-y-5">
@@ -1150,6 +1180,20 @@ export default function InventoryPage({ isFixtureOnly = false }: { isFixtureOnly
                                 className="inline-flex items-center gap-1 rounded-lg border border-indigo-200 bg-indigo-50/60 px-2 py-1 text-xs font-semibold text-indigo-700 hover:bg-indigo-100 dark:border-indigo-800 dark:bg-indigo-950/50 dark:text-indigo-300"
                               >
                                 <Send className="h-3 w-3" /> Projeye
+                              </button>
+                            )}
+                            {canUpdate && (
+                              <button
+                                onClick={() => handleToggleFixture(p)}
+                                title={p.is_fixture ? 'Teknik Envantere Kaydır' : 'Şirket Demirbaşına Kaydır'}
+                                className={`inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-xs font-semibold ${
+                                  p.is_fixture
+                                    ? 'border-indigo-200 bg-indigo-50/70 text-indigo-700 hover:bg-indigo-100 dark:border-indigo-800 dark:bg-indigo-950/40 dark:text-indigo-300'
+                                    : 'border-purple-200 bg-purple-50/70 text-purple-700 hover:bg-purple-100 dark:border-purple-800 dark:bg-purple-950/40 dark:text-purple-300'
+                                }`}
+                              >
+                                <Tag className="h-3 w-3" />
+                                {p.is_fixture ? 'Envantere' : 'Demirbaşa'}
                               </button>
                             )}
                             {canUpdate && (

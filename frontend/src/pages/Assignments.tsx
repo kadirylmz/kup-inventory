@@ -512,11 +512,24 @@ export default function AssignmentsPage() {
                       }}
                       className={inputCls}
                     >
-                      {products.map(p => (
-                        <option key={p.id} value={p.id}>
-                          {p.name}
-                        </option>
-                      ))}
+                      <optgroup label="Teknik Envanter Ürünleri">
+                        {products
+                          .filter(p => !p.is_fixture)
+                          .map(p => (
+                            <option key={p.id} value={p.id}>
+                              [Envanter] {p.name}
+                            </option>
+                          ))}
+                      </optgroup>
+                      <optgroup label="Şirket Demirbaşları">
+                        {products
+                          .filter(p => p.is_fixture)
+                          .map(p => (
+                            <option key={p.id} value={p.id}>
+                              [Demirbaş] {p.name}
+                            </option>
+                          ))}
+                      </optgroup>
                     </select>
                   </div>
                   <div className="col-span-4">

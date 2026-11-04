@@ -1173,6 +1173,47 @@ def create_department(
     return d
 
 
+@router.delete("/departments/{department_id}")
+def delete_department(
+    department_id: uuid.UUID,
+    request: Request,
+    db: Session = Depends(get_db),
+    me: User = Depends(require_permission("employee.manage")),
+):
+    d = db.get(Department, department_id)
+    if not d or d.tenant_id != me.tenant_id or d.is_deleted:
+        raise HTTPException(404, "Departman bulunamadı.")
+
+    # Bu departmana bağlı personel var mı kontrol et
+    emp_count = db.scalar(
+        select(func.count(Employee.id)).where(
+            Employee.tenant_id == me.tenant_id,
+            Employee.department_id == department_id,
+            Employee.is_deleted.is_(False),
+        )
+    ) or 0
+    if emp_count > 0:
+        raise HTTPException(
+            422,
+            f"Bu departmana kayıtlı {emp_count} personel bulunmaktadır. Önce personellerin departmanını değiştirin veya silin.",
+        )
+
+    d.is_deleted = True
+    d.deleted_at = datetime.now(timezone.utc)
+    write_audit(
+        db,
+        tenant_id=me.tenant_id,
+        user_id=me.id,
+        action="department.delete",
+        entity="department",
+        entity_id=d.id,
+        old={"name": d.name},
+        ip=client_ip(request),
+    )
+    db.commit()
+    return {"ok": True}
+
+
 @router.get("/employees", response_model=list[EmployeeOut])
 def list_employees(
     include_inactive: bool = False,

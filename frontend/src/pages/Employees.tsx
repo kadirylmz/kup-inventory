@@ -82,6 +82,17 @@ export default function EmployeesPage() {
     }
   }
 
+  const handleDeleteDepartment = async (dept: DepartmentItem) => {
+    if (!confirm(`"${dept.name}" departmanını silmek istediğinize emin misiniz?`)) return
+    try {
+      await api(`/departments/${dept.id}`, { method: 'DELETE' })
+      toast.success(`${dept.name} departmanı silindi.`)
+      qc.invalidateQueries({ queryKey: ['departments'] })
+    } catch (err) {
+      toast.error((err as Error).message)
+    }
+  }
+
   const createEmployee = async (e: FormEvent) => {
     e.preventDefault()
     try {
@@ -409,6 +420,29 @@ export default function EmployeesPage() {
                 placeholder="Örn: Teknik Prodüksiyon, Ar-Ge"
               />
             </label>
+
+            {departments.length > 0 && (
+              <div className="space-y-1.5 pt-2">
+                <div className="text-xs font-semibold uppercase text-slate-500">Mevcut Departmanlar</div>
+                <div className="max-h-36 space-y-1 overflow-y-auto rounded-lg border border-slate-200 p-2 dark:border-slate-800">
+                  {departments.map(d => (
+                    <div key={d.id} className="flex items-center justify-between text-xs py-1 px-1.5 rounded hover:bg-slate-100 dark:hover:bg-slate-800">
+                      <span className="font-medium text-slate-800 dark:text-slate-200">{d.name}</span>
+                      {can('employee.manage') && (
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteDepartment(d)}
+                          title="Departmanı Sil"
+                          className="text-rose-500 hover:text-rose-700"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
             <div className="flex justify-end gap-2 pt-2">
               <button
                 type="button"

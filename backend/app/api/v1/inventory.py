@@ -1104,15 +1104,7 @@ def update_product(
     )
     db.commit()
     db.refresh(p)
-    cnt = (
-        db.scalar(
-            select(func.count(Asset.id)).where(
-                Asset.tenant_id == me.tenant_id, Asset.product_id == p.id, Asset.is_deleted.is_(False)
-            )
-        )
-        or 0
-    )
-    return _to_product_out(p, {p.id: cnt})
+    return get_product(product_id=p.id, db=db, me=me)
 
 
 @router.delete("/products/{product_id}")

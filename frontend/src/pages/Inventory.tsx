@@ -318,13 +318,15 @@ export default function InventoryPage({ isFixtureOnly = false }: { isFixtureOnly
     enabled: !!shiftModal?.product && shiftModal.product.tracking_type === 'serial',
   })
 
-  const refreshAll = () => {
-    qc.invalidateQueries({ queryKey: ['products'] })
-    qc.invalidateQueries({ queryKey: ['assets'] })
-    qc.invalidateQueries({ queryKey: ['brands'] })
-    qc.invalidateQueries({ queryKey: ['models'] })
-    qc.invalidateQueries({ queryKey: ['projects'] })
-    qc.invalidateQueries({ queryKey: ['inventory-summary'] })
+  const refreshAll = async () => {
+    await Promise.all([
+      qc.invalidateQueries({ queryKey: ['products'] }),
+      qc.invalidateQueries({ queryKey: ['assets'] }),
+      qc.invalidateQueries({ queryKey: ['brands'] }),
+      qc.invalidateQueries({ queryKey: ['models'] }),
+      qc.invalidateQueries({ queryKey: ['projects'] }),
+      qc.invalidateQueries({ queryKey: ['inventory-summary'] }),
+    ])
     if (selectedProduct) {
       qc.invalidateQueries({ queryKey: ['product-assets', selectedProduct.id] })
     }
@@ -539,7 +541,7 @@ export default function InventoryPage({ isFixtureOnly = false }: { isFixtureOnly
         toast.success('Ürün ve varlık kayıtları oluşturuldu.')
       }
 
-      refreshAll()
+      await refreshAll()
       setOpenCreate(false)
       setEditingProduct(null)
     } catch (err) {

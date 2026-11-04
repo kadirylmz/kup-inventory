@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 
 from app.api.v1.warehouse_assignment import _adjust_balance, _next_no
 from app.core.config import get_settings
-from app.core.deps import client_ip, has_permission, require_permission, write_audit
+from app.core.deps import client_ip, get_current_user, has_permission, require_permission, write_audit
 from app.db.session import get_db
 from app.models.core import AuditLog, Employee, Setting, User
 from app.models.finance_count_system import (
@@ -1712,7 +1712,7 @@ class SettingsUpdateIn(BaseModel):
 @router.get("/settings")
 def get_system_settings(
     db: Session = Depends(get_db),
-    me: User = Depends(require_permission("setting.view")),
+    me: User = Depends(get_current_user),
 ):
     row = db.scalar(
         select(Setting).where(Setting.tenant_id == me.tenant_id, Setting.key == "general")

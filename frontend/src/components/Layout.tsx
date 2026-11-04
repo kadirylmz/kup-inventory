@@ -16,6 +16,7 @@ import {
   Moon,
   Package,
   Repeat,
+  Scale,
   Settings,
   ShieldCheck,
   Sun,
@@ -67,21 +68,23 @@ export default function Layout() {
     staleTime: 1000 * 60 * 5,
   })
 
-  const [imgError, setImgError] = useState(false)
-  const displayLogo = (!imgError && appSettings?.logo_url) ? appSettings.logo_url : '/logo.jpg'
-
   const visibleNav = NAV.filter(n => !n.perm || can(n.perm))
 
   return (
     <div className="flex h-screen">
       <aside className="hidden w-64 shrink-0 flex-col border-r border-slate-200 bg-white md:flex dark:border-slate-800 dark:bg-slate-900 print:hidden">
         <div className="flex items-center gap-2.5 px-4 py-3.5 border-b border-slate-100 dark:border-slate-800/60">
-          <img
-            src={displayLogo}
-            alt="Logo"
-            className="h-9 max-w-[120px] object-contain rounded"
-            onError={() => setImgError(true)}
-          />
+          {appSettings?.logo_url ? (
+            <img
+              src={appSettings.logo_url}
+              alt="Logo"
+              className="h-9 max-w-[120px] object-contain rounded"
+            />
+          ) : (
+            <div className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-brand-600 text-white shadow-sm">
+              <Scale className="h-5 w-5" />
+            </div>
+          )}
           <span className="font-bold tracking-tight text-sm truncate text-slate-800 dark:text-slate-100" title={appSettings?.company_name || 'KÜP INVENTORY'}>
             {appSettings?.company_name || 'KÜP INVENTORY'}
           </span>

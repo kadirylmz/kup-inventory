@@ -561,99 +561,121 @@ export default function AssignmentsPage() {
               </div>
               {lines.map((ln, idx) => {
                 const whQty = selectedWhStockMap[ln.product_id] || 0
+                const availableAssetsForProd = assets.filter(
+                  a =>
+                    a.product_id === ln.product_id &&
+                    a.status !== 'assigned' &&
+                    (!fromWhId || !a.warehouse_name || a.warehouse_name === selectedWhName)
+                )
+                const hasStockInWh = whQty > 0 || availableAssetsForProd.length > 0
+
                 return (
-                  <div key={idx} className="grid grid-cols-12 gap-2">
-                    <div className="col-span-5">
-                      <select
-                        value={ln.product_id}
-                        onChange={e => {
-                          const next = [...lines]
-                          next[idx].product_id = e.target.value
-                          next[idx].asset_id = ''
-                          next[idx].quantity = '1'
-                          setLines(next)
-                        }}
-                        className={inputCls}
-                      >
-                        <optgroup label="Teknik Envanter Ürünleri">
-                          {products
-                            .filter(p => !p.is_fixture)
-                            .map(p => {
-                              const pWhQty = selectedWhStockMap[p.id] || 0
-                              return (
-                                <option key={p.id} value={p.id}>
-                                  [Envanter] {p.name} {fromWhId ? `(Depo: ${pWhQty} ${p.unit || 'Adet'})` : ''}
-                                </option>
-                              )
-                            })}
-                        </optgroup>
-                        <optgroup label="Şirket Demirbaşları">
-                          {products
-                            .filter(p => p.is_fixture)
-                            .map(p => {
-                              const pWhQty = selectedWhStockMap[p.id] || 0
-                              return (
-                                <option key={p.id} value={p.id}>
-                                  [Demirbaş] {p.name} {fromWhId ? `(Depo: ${pWhQty} ${p.unit || 'Adet'})` : ''}
-                                </option>
-                              )
-                            })}
-                        </optgroup>
-                      </select>
-                    </div>
-                    <div className="col-span-4">
-                      <select
-                        value={ln.asset_id}
-                        onChange={e => {
-                          const next = [...lines]
-                          next[idx].asset_id = e.target.value
-                          setLines(next)
-                        }}
-                        className={inputCls}
-                      >
-                        <option value="">— Seri Cihaz Seçin (Opsiyonel) —</option>
-                        {assets
-                          .filter(
-                            a =>
-                              a.product_id === ln.product_id &&
-                              a.status !== 'assigned' &&
-                              (!fromWhId || !a.warehouse_name || a.warehouse_name === selectedWhName)
-                          )
-                          .map(a => (
+                  <div key={idx} className="space-y-1">
+                    <div className="grid grid-cols-12 gap-2">
+                      <div className="col-span-5">
+                        <select
+                          value={ln.product_id}
+                          onChange={e => {
+                            const next = [...lines]
+                            next[idx].product_id = e.target.value
+                            next[idx].asset_id = ''
+                            next[idx].quantity = '1'
+                            setLines(next)
+                          }}
+                          className={inputCls}
+                        >
+                          <optgroup label="Teknik Envanter Ürünleri">
+                            {products
+                              .filter(p => !p.is_fixture)
+                              .map(p => {
+                                const pWhQty = selectedWhStockMap[p.id] || 0
+                                const pAssets = assets.filter(
+                                  a =>
+                                    a.product_id === p.id &&
+                                    a.status !== 'assigned' &&
+                                    (!fromWhId || !a.warehouse_name || a.warehouse_name === selectedWhName)
+                                )
+                                const pAvailable = p.tracking_type === 'serial' ? pAssets.length : pWhQty
+                                return (
+                                  <option key={p.id} value={p.id}>
+                                    [Envanter] {p.name} {fromWhId ? `(Bu Depoda: ${pAvailable} ${p.unit || 'Adet'})` : ''}
+                                  </option>
+                                )
+                              })}
+                          </optgroup>
+                          <optgroup label="Şirket Demirbaşları">
+                            {products
+                              .filter(p => p.is_fixture)
+                              .map(p => {
+                                const pWhQty = selectedWhStockMap[p.id] || 0
+                                const pAssets = assets.filter(
+                                  a =>
+                                    a.product_id === p.id &&
+                                    a.status !== 'assigned' &&
+                                    (!fromWhId || !a.warehouse_name || a.warehouse_name === selectedWhName)
+                                )
+                                const pAvailable = p.tracking_type === 'serial' ? pAssets.length : pWhQty
+                                return (
+                                  <option key={p.id} value={p.id}>
+                                    [Demirbaş] {p.name} {fromWhId ? `(Bu Depoda: ${pAvailable} ${p.unit || 'Adet'})` : ''}
+                                  </option>
+                                )
+                              })}
+                          </optgroup>
+                        </select>
+                      </div>
+                      <div className="col-span-4">
+                        <select
+                          value={ln.asset_id}
+                          onChange={e => {
+                            const next = [...lines]
+                            next[idx].asset_id = e.target.value
+                            setLines(next)
+                          }}
+                          className={inputCls}
+                        >
+                          <option value="">— Seri Cihaz Seçin (Opsiyonel) —</option>
+                          {availableAssetsForProd.map(a => (
                             <option key={a.id} value={a.id}>
                               {a.serial_number} {a.warehouse_name ? `(${a.warehouse_name})` : ''}
                             </option>
                           ))}
-                      </select>
+                        </select>
+                      </div>
+                      <div className="col-span-2">
+                        <input
+                          type="number"
+                          min="1"
+                          max={ln.asset_id ? 1 : Math.max(1, whQty)}
+                          step="1"
+                          disabled={!!ln.asset_id}
+                          value={ln.asset_id ? '1' : ln.quantity}
+                          onChange={e => {
+                            const next = [...lines]
+                            next[idx].quantity = e.target.value
+                            setLines(next)
+                          }}
+                          className={inputCls}
+                          title={ln.asset_id ? 'Seri cihaz tesliminde adet 1 dir.' : `Maksimum teslim adedi: ${whQty}`}
+                        />
+                      </div>
+                      <div className="col-span-1 flex items-center justify-center">
+                        {lines.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => setLines(lines.filter((_, i) => i !== idx))}
+                            className="text-slate-400 hover:text-rose-600"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        )}
+                      </div>
                     </div>
-                    <div className="col-span-2">
-                      <input
-                        type="number"
-                        min="1"
-                        max={ln.asset_id ? 1 : Math.max(1, whQty)}
-                        step="1"
-                        disabled={!!ln.asset_id}
-                        value={ln.asset_id ? '1' : ln.quantity}
-                        onChange={e => {
-                          const next = [...lines]
-                          next[idx].quantity = e.target.value
-                          setLines(next)
-                        }}
-                        className={inputCls}
-                        title={ln.asset_id ? 'Seri cihaz tesliminde adet 1 dir.' : `Maksimum teslim adedi: ${whQty}`}
-                      />
-                    </div>
-                    <div className="col-span-1 flex items-center justify-center">
-                      {lines.length > 1 && (
-                        <button
-                          type="button"
-                          onClick={() => setLines(lines.filter((_, i) => i !== idx))}
-                          className="text-slate-400 hover:text-rose-600"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
-                      )}
-                    </div>
+                    {fromWhId && !hasStockInWh && (
+                      <div className="text-[11px] font-medium text-amber-600 dark:text-amber-400 pl-1">
+                        ⚠️ Bu ürün seçili <strong>{selectedWhName}</strong> deposunda tükenmiş veya mevcut değil. Çıkış için lütfen ürünün bulunduğu depoyu seçin.
+                      </div>
+                    )}
                   </div>
                 )
               })}

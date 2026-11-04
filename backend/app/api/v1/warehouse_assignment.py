@@ -86,32 +86,12 @@ def _adjust_balance(
     )
     if not bal:
         if delta < 0:
-            # Eğer ürün doğrudan Envanter Kataloğundan quantity > 0 olarak girildiyse ve henüz StockBalance satırı yoksa:
-            existing_sum = (
-                db.scalar(
-                    select(func.coalesce(func.sum(StockBalance.quantity), 0)).where(
-                        StockBalance.tenant_id == tenant_id,
-                        StockBalance.product_id == product.id,
-                    )
-                )
-                or Decimal("0")
+            wh_obj = db.get(Warehouse, warehouse_id)
+            wh_name = wh_obj.name if wh_obj else "Seçilen depo"
+            raise HTTPException(
+                422,
+                f"'{product.name}' ürünü {wh_name} deposunda mevcut değildir (Mevcut: 0, İstenen çıkış: {abs(delta)}).",
             )
-            untracked_qty = max(Decimal("0"), (product.quantity or Decimal("0")) - Decimal(str(existing_sum)))
-            if untracked_qty >= abs(delta):
-                bal = StockBalance(
-                    tenant_id=tenant_id,
-                    product_id=product.id,
-                    warehouse_id=warehouse_id,
-                    location_id=location_id,
-                    quantity=untracked_qty,
-                )
-                db.add(bal)
-                db.flush()
-            else:
-                raise HTTPException(
-                    422,
-                    f"'{product.name}' için seçilen depoda yeterli stok yok (Mevcut: {untracked_qty}).",
-                )
         else:
             bal = StockBalance(
                 tenant_id=tenant_id,
@@ -125,9 +105,11 @@ def _adjust_balance(
 
     new_qty = bal.quantity + delta
     if new_qty < 0:
+        wh_obj = db.get(Warehouse, warehouse_id)
+        wh_name = wh_obj.name if wh_obj else "Depo"
         raise HTTPException(
             422,
-            f"Stok negatif değere düşemez! '{product.name}' mevcut bakiye: {bal.quantity}, istenen çıkış: {abs(delta)}",
+            f"Stok yetersiz! '{product.name}' ({wh_name}) mevcut bakiye: {bal.quantity}, istenen çıkış: {abs(delta)}",
         )
     bal.quantity = new_qty
     db.flush()
@@ -1442,109 +1424,137 @@ def create_assignment(
     db: Session = Depends(get_db),
     me: User = Depends(require_permission("assignment.manage")),
 ):
-    emp = db.get(Employee, body.employee_id)
-    if not emp or emp.tenant_id != me.tenant_id or emp.is_deleted or not emp.is_active:
-        raise HTTPException(404, "Aktif personel bulunamadı.")
+    try:
+        emp = db.get(Employee, body.employee_id)
+        if not emp or emp.tenant_id != me.tenant_id or emp.is_deleted or not emp.is_active:
+            raise HTTPException(404, "Aktif personel bulunamadı.")
 
-    assign_no = _next_no(db, Assignment, Assignment.assignment_no, "ZIM")
-    a_items: list[AssignmentItem] = []
-    m_items: list[StockMovementItem] = []
-
-    for it in body.items:
-        prod = db.get(Product, it.product_id)
-        if not prod or prod.tenant_id != me.tenant_id:
-            raise HTTPException(404, "Ürün bulunamadı.")
-        asset: Asset | None = None
-        if it.asset_id:
-            asset = db.get(Asset, it.asset_id)
-            if not asset or asset.tenant_id != me.tenant_id or asset.product_id != prod.id:
-                raise HTTPException(404, "Seri numaralı cihaz bulunamadı.")
-            if asset.status == "assigned":
-                raise HTTPException(409, f"{asset.serial_number} seri numaralı cihaz zaten zimmette.")
-            prev_loc = asset.warehouse_name or "Depo"
-            asset.status = "assigned"
-            asset.assigned_employee_name = emp.full_name
-            qty = Decimal("1")
+        # Çıkış deposu seçimi kontrolü
+        from_wh: Warehouse | None = None
+        if body.from_warehouse_id:
+            from_wh = db.get(Warehouse, body.from_warehouse_id)
+            if not from_wh or from_wh.tenant_id != me.tenant_id or from_wh.is_deleted:
+                raise HTTPException(404, "Seçilen çıkış deposu bulunamadı.")
         else:
-            qty = it.quantity
-            prev_loc = prod.warehouse_name or "Depo"
-            from_wh_id = body.from_warehouse_id
-            if not from_wh_id:
-                sb = db.scalar(
+            raise HTTPException(422, "Lütfen ürünlerin çıkış yapılacağı depoyu seçin.")
+
+        assign_no = _next_no(db, Assignment, Assignment.assignment_no, "ZIM")
+        a_items: list[AssignmentItem] = []
+        m_items: list[StockMovementItem] = []
+
+        # 1. AŞAMA: ÖN DOĞRULAMA (Pre-validation)
+        # Hiçbir nesneyi değiştirmeden önce tüm kalemlerin seçilen depoda mevcut olup olmadığını kontrol et!
+        for it in body.items:
+            prod = db.get(Product, it.product_id)
+            if not prod or prod.tenant_id != me.tenant_id or prod.is_deleted:
+                raise HTTPException(404, f"Seçilen ürün (ID: {it.product_id}) sistemde bulunamadı.")
+
+            if it.asset_id:
+                asset = db.get(Asset, it.asset_id)
+                if not asset or asset.tenant_id != me.tenant_id or asset.product_id != prod.id or asset.is_deleted:
+                    raise HTTPException(404, f"'{prod.name}' için seçilen seri numaralı cihaz bulunamadı.")
+                if asset.status == "assigned":
+                    raise HTTPException(409, f"'{asset.serial_number}' seri numaralı cihaz zaten başka bir personele zimmetlidir.")
+
+                # Seri cihazın depoda olup olmadığını kontrol et
+                if asset.warehouse_name and asset.warehouse_name != from_wh.name:
+                    raise HTTPException(
+                        422,
+                        f"'{asset.serial_number}' seri numaralı cihaz '{asset.warehouse_name}' deposundadır. '{from_wh.name}' üzerinden teslim edilemez!",
+                    )
+            else:
+                qty = it.quantity
+                if qty <= Decimal("0"):
+                    raise HTTPException(422, f"'{prod.name}' için teslim miktarı 0'dan büyük olmalıdır.")
+
+                # Seçilen depodaki anlık stok bakiyesi
+                bal = db.scalar(
                     select(StockBalance).where(
                         StockBalance.tenant_id == me.tenant_id,
                         StockBalance.product_id == prod.id,
-                        StockBalance.quantity > 0,
-                    ).order_by(StockBalance.quantity.desc())
+                        StockBalance.warehouse_id == from_wh.id,
+                    )
                 )
-                if sb:
-                    from_wh_id = sb.warehouse_id
-
-            if from_wh_id:
-                _adjust_balance(db, me.tenant_id, prod, from_wh_id, None, -qty)
-            else:
-                if (prod.quantity or Decimal("0")) < qty:
+                avail_qty = bal.quantity if bal else Decimal("0")
+                if avail_qty < qty:
                     raise HTTPException(
                         422,
-                        f"'{prod.name}' için yeterli stok yok (Mevcut: {prod.quantity or 0}, İstenen: {qty}).",
+                        f"'{prod.name}' ürünü '{from_wh.name}' deposunda yetersizdir! (Mevcut: {avail_qty}, İstenen: {qty})",
                     )
-                prod.quantity = (prod.quantity or Decimal("0")) - qty
-            if (prod.quantity or Decimal("0")) <= Decimal("0"):
-                prod.status = "assigned"
 
-        a_items.append(AssignmentItem(product_id=prod.id, asset_id=asset.id if asset else None, quantity=qty))
-        m_items.append(
-            StockMovementItem(
-                product_id=prod.id,
-                asset_id=asset.id if asset else None,
-                quantity=qty,
-                previous_location_text=prev_loc,
-                new_location_text=f"Zimmet: {emp.full_name}",
+        # 2. AŞAMA: GERÇEKLEŞTİRME (Execution)
+        for it in body.items:
+            prod = db.get(Product, it.product_id)
+            asset: Asset | None = None
+            if it.asset_id:
+                asset = db.get(Asset, it.asset_id)
+                prev_loc = asset.warehouse_name or from_wh.name
+                asset.status = "assigned"
+                asset.assigned_employee_name = emp.full_name
+                qty = Decimal("1")
+            else:
+                qty = it.quantity
+                prev_loc = from_wh.name
+                _adjust_balance(db, me.tenant_id, prod, from_wh.id, None, -qty)
+                if (prod.quantity or Decimal("0")) <= Decimal("0"):
+                    prod.status = "assigned"
+
+            a_items.append(AssignmentItem(product_id=prod.id, asset_id=asset.id if asset else None, quantity=qty))
+            m_items.append(
+                StockMovementItem(
+                    product_id=prod.id,
+                    asset_id=asset.id if asset else None,
+                    quantity=qty,
+                    previous_location_text=prev_loc,
+                    new_location_text=f"Zimmet: {emp.full_name}",
+                )
             )
+
+        asg = Assignment(
+            tenant_id=me.tenant_id,
+            assignment_no=assign_no,
+            employee_id=emp.id,
+            delivered_by_user_id=me.id,
+            expected_return_date=body.expected_return_date,
+            status="active",
+            note=body.note,
+            items=a_items,
         )
+        db.add(asg)
 
-    asg = Assignment(
-        tenant_id=me.tenant_id,
-        assignment_no=assign_no,
-        employee_id=emp.id,
-        delivered_by_user_id=me.id,
-        expected_return_date=body.expected_return_date,
-        status="active",
-        note=body.note,
-        items=a_items,
-    )
-    db.add(asg)
+        mov = StockMovement(
+            tenant_id=me.tenant_id,
+            movement_no=_next_no(db, StockMovement, StockMovement.movement_no, "MOV"),
+            movement_type="assign",
+            from_warehouse_id=from_wh.id,
+            employee_id=emp.id,
+            performed_by=me.id,
+            note=f"[{assign_no}] {emp.full_name} zimmet teslimi",
+            items=m_items,
+        )
+        db.add(mov)
+        db.flush()
 
-    mov = StockMovement(
-        tenant_id=me.tenant_id,
-        movement_no=_next_no(db, StockMovement, StockMovement.movement_no, "MOV"),
-        movement_type="assign",
-        from_warehouse_id=body.from_warehouse_id,
-        employee_id=emp.id,
-        performed_by=me.id,
-        note=f"[{assign_no}] {emp.full_name} zimmet teslimi",
-        items=m_items,
-    )
-    db.add(mov)
-    db.flush()
-
-    write_audit(
-        db,
-        tenant_id=me.tenant_id,
-        user_id=me.id,
-        action="assignment.create",
-        entity="assignment",
-        entity_id=asg.id,
-        new={"assignment_no": assign_no, "employee": emp.full_name, "items": len(a_items)},
-        ip=client_ip(request),
-    )
-    db.commit()
-    db.refresh(asg)
-    dept_map = {
-        d.id: d.name
-        for d in db.scalars(select(Department).where(Department.tenant_id == me.tenant_id)).all()
-    }
-    return _to_assignment_out(asg, dept_map)
+        write_audit(
+            db,
+            tenant_id=me.tenant_id,
+            user_id=me.id,
+            action="assignment.create",
+            entity="assignment",
+            entity_id=asg.id,
+            new={"assignment_no": assign_no, "employee": emp.full_name, "items": len(a_items)},
+            ip=client_ip(request),
+        )
+        db.commit()
+        db.refresh(asg)
+        dept_map = {
+            d.id: d.name
+            for d in db.scalars(select(Department).where(Department.tenant_id == me.tenant_id)).all()
+        }
+        return _to_assignment_out(asg, dept_map)
+    except Exception:
+        db.rollback()
+        raise
 
 
 @router.post("/assignments/{assignment_id}/return", response_model=AssignmentOut)

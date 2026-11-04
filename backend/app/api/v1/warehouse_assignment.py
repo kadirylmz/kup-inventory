@@ -1470,24 +1470,31 @@ def create_assignment(
             prev_loc = prod.warehouse_name or "Depo"
             from_wh_id = body.from_warehouse_id
             if not from_wh_id:
-                sb = db.scalar(
-                    select(StockBalance).where(
-                        StockBalance.tenant_id == me.tenant_id,
-                        StockBalance.product_id == prod.id,
-                        StockBalance.quantity > 0,
-                    ).order_by(StockBalance.quantity.desc())
-                )
-                if sb:
-                    from_wh_id = sb.warehouse_id
+                central_wh = db.scalar(select(Warehouse).where(Warehouse.tenant_id == me.tenant_id, Warehouse.code == "WH-CENTRAL", Warehouse.is_deleted.is_(False)))
+                if central_wh:
+                    from_wh_id = central_wh.id
+                else:
+                    sb = db.scalar(select(StockBalance).where(StockBalance.tenant_id == me.tenant_id, StockBalance.product_id == prod.id, StockBalance.quantity > 0).order_by(StockBalance.quantity.desc()))
+                    if sb:
+                        from_wh_id = sb.warehouse_id
+
+            avail_qty = Decimal("0")
+            wh_name = "Depo"
+            if from_wh_id:
+                wh_obj = db.get(Warehouse, from_wh_id)
+                if wh_obj:
+                    wh_name = wh_obj.name
+                bal = db.scalar(select(StockBalance).where(StockBalance.tenant_id == me.tenant_id, StockBalance.product_id == prod.id, StockBalance.warehouse_id == from_wh_id))
+                avail_qty = bal.quantity if bal else Decimal("0")
+            else:
+                avail_qty = prod.quantity or Decimal("0")
+
+            if avail_qty < qty:
+                raise HTTPException(422, f"'{prod.name}' için {wh_name} deposunda yeterli stok yok! (Mevcut: {avail_qty}, İstenen: {qty})")
 
             if from_wh_id:
                 _adjust_balance(db, me.tenant_id, prod, from_wh_id, None, -qty)
             else:
-                if (prod.quantity or Decimal("0")) < qty:
-                    raise HTTPException(
-                        422,
-                        f"'{prod.name}' için yeterli stok yok (Mevcut: {prod.quantity or 0}, İstenen: {qty}).",
-                    )
                 prod.quantity = (prod.quantity or Decimal("0")) - qty
             if (prod.quantity or Decimal("0")) <= Decimal("0"):
                 prod.status = "assigned"

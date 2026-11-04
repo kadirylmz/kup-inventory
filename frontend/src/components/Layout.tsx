@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '@/lib/api'
 import { Link, NavLink, Outlet } from 'react-router-dom'
-import { DEFAULT_LOGO } from '@/assets/logo'
 import {
   Bell,
   Boxes,
@@ -69,7 +68,7 @@ export default function Layout() {
   })
 
   const [imgError, setImgError] = useState(false)
-  const displayLogo = (!imgError && appSettings?.logo_url) ? appSettings.logo_url : DEFAULT_LOGO
+  const displayLogo = (!imgError && appSettings?.logo_url) ? appSettings.logo_url : '/logo.jpg'
 
   const visibleNav = NAV.filter(n => !n.perm || can(n.perm))
 

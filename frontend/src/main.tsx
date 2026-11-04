@@ -38,8 +38,8 @@ function Gate() {
     <Routes>
       <Route element={<Layout />}>
         <Route path="/" element={can('dashboard.view') ? <DashboardPage /> : <Navigate to="/envanter" replace />} />
-        <Route path="/envanter" element={<InventoryPage />} />
-        <Route path="/demirbaslar" element={<InventoryPage isFixtureOnly={true} />} />
+        <Route path="/envanter" element={can('product.view') ? <InventoryPage /> : <Navigate to="/" replace />} />
+        <Route path="/demirbaslar" element={can('fixture.view') ? <InventoryPage isFixtureOnly={true} /> : <Navigate to="/" replace />} />
         <Route path="/kategoriler" element={can('category.view') ? <CategoriesPage /> : <Navigate to="/envanter" replace />} />
         <Route path="/markalar" element={can('brand.view') ? <BrandsModelsPage /> : <Navigate to="/envanter" replace />} />
         <Route path="/depolar" element={can('warehouse.view') ? <WarehousesPage /> : <Navigate to="/envanter" replace />} />

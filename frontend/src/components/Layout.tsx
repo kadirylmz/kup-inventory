@@ -34,7 +34,7 @@ import { cn } from '@/lib/api'
 export const NAV = [
   { to: '/', label: 'Genel Bakış', icon: LayoutDashboard, perm: 'dashboard.view' },
   { to: '/envanter', label: 'Envanter', icon: Package, perm: 'product.view' },
-  { to: '/demirbaslar', label: 'Demirbaşlar', icon: Armchair, perm: 'product.view' },
+  { to: '/demirbaslar', label: 'Demirbaşlar', icon: Armchair, perm: 'fixture.view' },
   { to: '/kategoriler', label: 'Kategoriler', icon: Tags, perm: 'category.view' },
   { to: '/markalar', label: 'Markalar ve Modeller', icon: Boxes, perm: 'brand.view' },
   { to: '/depolar', label: 'Depolar', icon: Building2, perm: 'warehouse.view' },

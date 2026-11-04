@@ -3,6 +3,7 @@
 MODULES: dict[str, list[str]] = {
     "dashboard": ["view"],
     "product": ["view", "create", "update", "delete", "deactivate"],
+    "fixture": ["view", "create", "update", "delete"],
     "category": ["view", "manage"],
     "brand": ["view", "manage"],
     "warehouse": ["view", "manage"],
@@ -36,7 +37,7 @@ SYSTEM_ROLES: dict[str, dict] = {
     "ADMIN": {"name": "Yönetici", "perms": ALL_CODES},
     "INVENTORY_MANAGER": {
         "name": "Envanter Yöneticisi",
-        "perms": sorted(set(VIEW_CODES + _mods("product", "category", "brand", "warehouse", "movement", "assignment", "employee", "valuation", "stocktake") + ["report.generate"])),
+        "perms": sorted(set(VIEW_CODES + _mods("product", "fixture", "category", "brand", "warehouse", "movement", "assignment", "employee", "valuation", "stocktake") + ["report.generate"])),
     },
     "TECHNICIAN": {
         "name": "Teknisyen",

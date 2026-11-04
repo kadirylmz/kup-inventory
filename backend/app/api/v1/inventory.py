@@ -590,8 +590,18 @@ def list_products(
     is_fixture: bool | None = None,
     include_inactive: bool = False,
     db: Session = Depends(get_db),
-    me: User = Depends(require_permission("product.view")),
+    me: User = Depends(require_permission("product.view", "fixture.view")),
 ):
+    from app.core.deps import has_permission
+
+    can_view_product = has_permission(me, "product.view")
+    can_view_fixture = has_permission(me, "fixture.view")
+
+    if is_fixture is True and not can_view_fixture:
+        raise HTTPException(403, "Demirbaşları görüntüleme yetkiniz yok.")
+    if is_fixture is False and not can_view_product:
+        raise HTTPException(403, "Envanteri görüntüleme yetkiniz yok.")
+
     stmt = select(Product).where(Product.tenant_id == me.tenant_id, Product.is_deleted.is_(False))
     if not include_inactive:
         stmt = stmt.where(Product.is_active.is_(True))
@@ -606,6 +616,11 @@ def list_products(
             stmt = stmt.where(Product.is_fixture == True)
         else:
             stmt = stmt.where(or_(Product.is_fixture == False, Product.is_fixture.is_(None)))
+    else:
+        if not can_view_fixture:
+            stmt = stmt.where(or_(Product.is_fixture == False, Product.is_fixture.is_(None)))
+        elif not can_view_product:
+            stmt = stmt.where(Product.is_fixture == True)
     if status == "assigned":
         from app.models.warehouse_assignment import AssignmentItem, Assignment
         asg_prod_ids = select(AssignmentItem.product_id).join(Assignment, Assignment.id == AssignmentItem.assignment_id).where(
@@ -827,8 +842,14 @@ def create_product(
     body: ProductCreate,
     request: Request,
     db: Session = Depends(get_db),
-    me: User = Depends(require_permission("product.create")),
+    me: User = Depends(require_permission("product.create", "fixture.create")),
 ):
+    from app.core.deps import has_permission
+
+    if body.is_fixture and not has_permission(me, "fixture.create"):
+        raise HTTPException(403, "Demirbaş ekleme yetkiniz yok.")
+    if not body.is_fixture and not has_permission(me, "product.create"):
+        raise HTTPException(403, "Envanter ürünü ekleme yetkiniz yok.")
     cat = db.get(Category, body.category_id)
     if not cat or cat.tenant_id != me.tenant_id or cat.is_deleted:
         raise HTTPException(404, "Kategori bulunamadı.")
@@ -986,11 +1007,18 @@ def update_product(
     body: ProductUpdate,
     request: Request,
     db: Session = Depends(get_db),
-    me: User = Depends(require_permission("product.update")),
+    me: User = Depends(require_permission("product.update", "fixture.update")),
 ):
+    from app.core.deps import has_permission
+
     p = db.get(Product, product_id)
     if not p or p.tenant_id != me.tenant_id or p.is_deleted:
         raise HTTPException(404, "Ürün bulunamadı.")
+
+    if p.is_fixture and not has_permission(me, "fixture.update"):
+        raise HTTPException(403, "Demirbaşları güncelleme yetkiniz yok.")
+    if not p.is_fixture and not has_permission(me, "product.update"):
+        raise HTTPException(403, "Envanter ürünlerini güncelleme yetkiniz yok.")
 
     old = {
         "name": p.name,
@@ -1112,13 +1140,19 @@ def delete_product(
     product_id: uuid.UUID,
     request: Request,
     db: Session = Depends(get_db),
-    me: User = Depends(require_permission("product.delete")),
+    me: User = Depends(require_permission("product.delete", "fixture.delete")),
 ):
     from app.models.warehouse_assignment import StockBalance
+    from app.core.deps import has_permission
 
     p = db.get(Product, product_id)
     if not p or p.tenant_id != me.tenant_id or p.is_deleted:
         raise HTTPException(404, "Ürün bulunamadı.")
+
+    if p.is_fixture and not has_permission(me, "fixture.delete"):
+        raise HTTPException(403, "Demirbaşları silme yetkiniz yok.")
+    if not p.is_fixture and not has_permission(me, "product.delete"):
+        raise HTTPException(403, "Envanter ürünlerini silme yetkiniz yok.")
     p.is_deleted = True
     p.is_active = False
     p.quantity = Decimal("0")
@@ -1295,8 +1329,18 @@ def list_assets(
     is_fixture: bool | None = None,
     q: str | None = None,
     db: Session = Depends(get_db),
-    me: User = Depends(require_permission("product.view")),
+    me: User = Depends(require_permission("product.view", "fixture.view")),
 ):
+    from app.core.deps import has_permission
+
+    can_view_product = has_permission(me, "product.view")
+    can_view_fixture = has_permission(me, "fixture.view")
+
+    if is_fixture is True and not can_view_fixture:
+        raise HTTPException(403, "Demirbaşları görüntüleme yetkiniz yok.")
+    if is_fixture is False and not can_view_product:
+        raise HTTPException(403, "Envanter cihazlarını görüntüleme yetkiniz yok.")
+
     stmt = select(Asset).where(Asset.tenant_id == me.tenant_id, Asset.is_deleted.is_(False))
     if is_fixture is not None:
         stmt = stmt.join(Product, Product.id == Asset.product_id)
@@ -1304,6 +1348,13 @@ def list_assets(
             stmt = stmt.where(Product.is_fixture == True)
         else:
             stmt = stmt.where(or_(Product.is_fixture == False, Product.is_fixture.is_(None)))
+    else:
+        if not can_view_fixture or not can_view_product:
+            stmt = stmt.join(Product, Product.id == Asset.product_id)
+            if not can_view_fixture:
+                stmt = stmt.where(or_(Product.is_fixture == False, Product.is_fixture.is_(None)))
+            elif not can_view_product:
+                stmt = stmt.where(Product.is_fixture == True)
     if product_id:
         stmt = stmt.where(Asset.product_id == product_id)
     if status:
@@ -1326,11 +1377,17 @@ def create_asset(
     body: AssetCreate,
     request: Request,
     db: Session = Depends(get_db),
-    me: User = Depends(require_permission("product.create")),
+    me: User = Depends(require_permission("product.create", "fixture.create")),
 ):
+    from app.core.deps import has_permission
+
     p = db.get(Product, body.product_id)
     if not p or p.tenant_id != me.tenant_id or p.is_deleted:
         raise HTTPException(404, "Ürün bulunamadı.")
+    if p.is_fixture and not has_permission(me, "fixture.create"):
+        raise HTTPException(403, "Demirbaş cihazı ekleme yetkiniz yok.")
+    if not p.is_fixture and not has_permission(me, "product.create"):
+        raise HTTPException(403, "Envanter cihazı ekleme yetkiniz yok.")
     sn = body.serial_number.strip()
     if db.scalar(select(Asset).where(Asset.tenant_id == me.tenant_id, Asset.serial_number == sn)):
         raise HTTPException(409, "Bu seri numarası zaten sistemde kayıtlı.")
@@ -1392,11 +1449,17 @@ def bulk_create_assets(
     body: AssetBulkCreate,
     request: Request,
     db: Session = Depends(get_db),
-    me: User = Depends(require_permission("product.create")),
+    me: User = Depends(require_permission("product.create", "fixture.create")),
 ):
+    from app.core.deps import has_permission
+
     p = db.get(Product, body.product_id)
     if not p or p.tenant_id != me.tenant_id or p.is_deleted:
         raise HTTPException(404, "Ürün bulunamadı.")
+    if p.is_fixture and not has_permission(me, "fixture.create"):
+        raise HTTPException(403, "Demirbaş cihazı ekleme yetkiniz yok.")
+    if not p.is_fixture and not has_permission(me, "product.create"):
+        raise HTTPException(403, "Envanter cihazı ekleme yetkiniz yok.")
 
     serials = [s.strip() for s in body.serial_numbers if s.strip()]
     if not serials:
@@ -1469,11 +1532,19 @@ def update_asset(
     body: AssetUpdate,
     request: Request,
     db: Session = Depends(get_db),
-    me: User = Depends(require_permission("product.update")),
+    me: User = Depends(require_permission("product.update", "fixture.update")),
 ):
+    from app.core.deps import has_permission
+
     a = db.get(Asset, asset_id)
     if not a or a.tenant_id != me.tenant_id or a.is_deleted:
         raise HTTPException(404, "Varlık bulunamadı.")
+
+    is_fix = a.product.is_fixture if a.product else False
+    if is_fix and not has_permission(me, "fixture.update"):
+        raise HTTPException(403, "Demirbaş cihazını güncelleme yetkiniz yok.")
+    if not is_fix and not has_permission(me, "product.update"):
+        raise HTTPException(403, "Envanter cihazını güncelleme yetkiniz yok.")
     old = {"status": a.status, "warehouse_name": a.warehouse_name, "condition": a.condition}
     updates = body.model_dump(exclude_unset=True)
     if "current_market_value" in updates and updates["current_market_value"] != a.current_market_value:
@@ -1501,11 +1572,19 @@ def delete_asset(
     asset_id: uuid.UUID,
     request: Request,
     db: Session = Depends(get_db),
-    me: User = Depends(require_permission("product.delete")),
+    me: User = Depends(require_permission("product.delete", "fixture.delete")),
 ):
+    from app.core.deps import has_permission
+
     a = db.get(Asset, asset_id)
     if not a or a.tenant_id != me.tenant_id or a.is_deleted:
         raise HTTPException(404, "Cihaz bulunamadı.")
+
+    is_fix = a.product.is_fixture if a.product else False
+    if is_fix and not has_permission(me, "fixture.delete"):
+        raise HTTPException(403, "Demirbaş cihazını silme yetkiniz yok.")
+    if not is_fix and not has_permission(me, "product.delete"):
+        raise HTTPException(403, "Envanter cihazını silme yetkiniz yok.")
     a.is_deleted = True
     a.is_active = False
     if a.product:

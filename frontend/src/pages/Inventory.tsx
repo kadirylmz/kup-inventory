@@ -854,6 +854,10 @@ export default function InventoryPage({ isFixtureOnly = false }: { isFixtureOnly
   const matchedBrand = brands.find(b => b.name.toLowerCase() === fBrandName.trim().toLowerCase())
   const suggestedModels = matchedBrand ? models.filter(m => m.brand_id === matchedBrand.id) : models
 
+  const canCreate = isFixtureOnly ? can('fixture.create') : can('product.create')
+  const canUpdate = isFixtureOnly ? can('fixture.update') : can('product.update')
+  const canDelete = isFixtureOnly ? can('fixture.delete') : can('product.delete')
+
   return (
     <div className="space-y-5">
       {/* Üst Başlık */}
@@ -868,7 +872,7 @@ export default function InventoryPage({ isFixtureOnly = false }: { isFixtureOnly
               : 'Ürün katalog kartları, adet bazlı sarf malzemeleri, seri numaralı cihazlar ve projedeki ekipman takibi'}
           </p>
         </div>
-        {can('product.create') && (
+        {canCreate && (
           <button
             onClick={openNewModal}
             className="flex items-center gap-2 rounded-lg bg-brand-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-brand-700"
@@ -1143,7 +1147,7 @@ export default function InventoryPage({ isFixtureOnly = false }: { isFixtureOnly
                                 <Send className="h-3 w-3" /> Projeye
                               </button>
                             )}
-                            {can('product.update') && (
+                            {canUpdate && (
                               <button
                                 onClick={() => openEditModal(p)}
                                 title="Düzenle"
@@ -1159,7 +1163,7 @@ export default function InventoryPage({ isFixtureOnly = false }: { isFixtureOnly
                             >
                               <Eye className="h-3.5 w-3.5" />
                             </button>
-                            {can('product.update') && (
+                            {canUpdate && (
                               p.status === 'scrapped' ? (
                                 <button
                                   onClick={() => handleUnscrapProduct(p)}
@@ -1178,7 +1182,7 @@ export default function InventoryPage({ isFixtureOnly = false }: { isFixtureOnly
                                 </button>
                               )
                             )}
-                            {can('product.delete') && (
+                            {canDelete && (
                               <button
                                 onClick={() => handleDeleteProduct(p)}
                                 title="Sil"
@@ -1267,7 +1271,7 @@ export default function InventoryPage({ isFixtureOnly = false }: { isFixtureOnly
                             : '—'}
                         </td>
                         <td className="p-3.5">
-                          {can('product.update') ? (
+                          {canUpdate ? (
                             <select
                               value={a.status}
                               onChange={e => updateAssetStatus(a, e.target.value)}
@@ -1296,7 +1300,7 @@ export default function InventoryPage({ isFixtureOnly = false }: { isFixtureOnly
                                 <Send className="h-3 w-3" /> Projeye
                               </button>
                             )}
-                            {can('product.update') && (
+                            {canUpdate && (
                               <button
                                 onClick={() => openAssetEditModal(a)}
                                 title="Cihazı Düzenle"
@@ -1312,7 +1316,7 @@ export default function InventoryPage({ isFixtureOnly = false }: { isFixtureOnly
                             >
                               <QrCode className="h-3.5 w-3.5" /> QR
                             </button>
-                            {can('product.update') && (
+                            {canUpdate && (
                               a.status === 'scrapped' ? (
                                 <button
                                   onClick={() => handleUnscrapAsset(a)}
@@ -1331,7 +1335,7 @@ export default function InventoryPage({ isFixtureOnly = false }: { isFixtureOnly
                                 </button>
                               )
                             )}
-                            {can('product.delete') && (
+                            {canDelete && (
                               <button
                                 onClick={() => handleDeleteAsset(a)}
                                 title="Cihazı Sil"

@@ -1043,6 +1043,11 @@ def update_product(
             a.purchase_price = new_pprice
             a.purchase_currency = new_pcurr
 
+    if updates.get('tracking_type') == 'quantity' and p.tracking_type == 'serial':
+        for a in db.scalars(select(Asset).where(Asset.tenant_id == me.tenant_id, Asset.product_id == p.id)):
+            a.is_deleted = True
+            a.is_active = False
+
     for k, v in updates.items():
         setattr(p, k, v)
 
@@ -1295,11 +1300,18 @@ def _to_asset_out(a: Asset) -> AssetOut:
 def list_assets(
     product_id: uuid.UUID | None = None,
     status: str | None = None,
+    is_fixture: bool | None = None,
     q: str | None = None,
     db: Session = Depends(get_db),
     me: User = Depends(require_permission("product.view")),
 ):
     stmt = select(Asset).where(Asset.tenant_id == me.tenant_id, Asset.is_deleted.is_(False))
+    if is_fixture is not None:
+        stmt = stmt.join(Product, Product.id == Asset.product_id)
+        if is_fixture:
+            stmt = stmt.where(Product.is_fixture == True)
+        else:
+            stmt = stmt.where(or_(Product.is_fixture == False, Product.is_fixture.is_(None)))
     if product_id:
         stmt = stmt.where(Asset.product_id == product_id)
     if status:

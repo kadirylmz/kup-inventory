@@ -212,6 +212,7 @@ class ProductUpdate(BaseModel):
     brand_name: str | None = Field(default=None, max_length=120)
     model_id: uuid.UUID | None = None
     model_name: str | None = Field(default=None, max_length=150)
+    tracking_type: TrackingType | None = None
     unit: str | None = Field(default=None, max_length=30)
     barcode: str | None = Field(default=None, max_length=100)
     description: str | None = None

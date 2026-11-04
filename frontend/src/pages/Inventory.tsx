@@ -262,7 +262,7 @@ export default function InventoryPage({ isFixtureOnly = false }: { isFixtureOnly
   if (brandFilter) prodParams.set('brand_id', brandFilter)
   if (trackFilter) prodParams.set('tracking_type', trackFilter)
   if (statusFilter && statusFilter !== 'has_project') prodParams.set('status', statusFilter)
-  if (isFixtureOnly) prodParams.set('is_fixture', 'true')
+  prodParams.set('is_fixture', isFixtureOnly ? 'true' : 'false')
 
   const { data: rawProducts = [], isLoading: pLoading } = useQuery({
     queryKey: ['products', prodParams.toString()],
@@ -287,6 +287,7 @@ export default function InventoryPage({ isFixtureOnly = false }: { isFixtureOnly
   if (q) assetParams.set('q', q)
   if (statusFilter && statusFilter !== 'has_project') assetParams.set('status', statusFilter)
   if (statusFilter === 'has_project') assetParams.set('status', 'in_project')
+  assetParams.set('is_fixture', isFixtureOnly ? 'true' : 'false')
 
   const { data: assets = [], isLoading: aLoading } = useQuery({
     queryKey: ['assets', assetParams.toString()],
@@ -459,6 +460,7 @@ export default function InventoryPage({ isFixtureOnly = false }: { isFixtureOnly
             subcategory_id: fSubCatId || null,
             brand_name: fBrandName.trim(),
             model_name: fModelName.trim(),
+            tracking_type: fTracking,
             unit: fUnit,
             barcode: fBarcode || null,
             description: fDesc || null,
@@ -1474,13 +1476,12 @@ export default function InventoryPage({ isFixtureOnly = false }: { isFixtureOnly
                     Takip Modeli *
                     <select
                       value={fTracking}
-                      disabled={!!editingProduct}
                       onChange={e => {
                         const val = e.target.value as 'serial' | 'quantity'
                         setFTracking(val)
                         if (val === 'serial') setFUnit('Adet')
                       }}
-                      className={inputCls + ' mt-1 disabled:opacity-60'}
+                      className={inputCls + ' mt-1'}
                     >
                       <option value="serial">Seri Numarası Bazlı Tekil Cihaz Takibi</option>
                       <option value="quantity">Adet / Metre / Miktar Bazlı Stok Takibi</option>

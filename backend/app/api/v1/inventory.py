@@ -512,38 +512,51 @@ def _resolve_brand_and_model(
 ) -> tuple[uuid.UUID | None, uuid.UUID | None]:
     """Kullanıcı marka veya modeli serbest metin olarak yazdığında bulur ya da otomatik oluşturur."""
     resolved_brand_id = brand_id
-    if not resolved_brand_id and brand_name and brand_name.strip():
+
+    # Eğer marka adı açıkça gönderilmişse (veya değiştirilmişse), isme göre eşleştir veya yeni aç
+    if brand_name is not None:
         bname = brand_name.strip()
-        existing_b = db.scalar(
-            select(Brand).where(Brand.tenant_id == tenant_id, func.lower(Brand.name) == bname.lower())
-        )
-        if existing_b:
-            existing_b.is_deleted = False
-            resolved_brand_id = existing_b.id
+        if bname:
+            # Mevcut seçili brand_id bu isimle eşleşmiyorsa veya yoksa yeni/eşleşen marka bul
+            current_b = db.get(Brand, resolved_brand_id) if resolved_brand_id else None
+            if not current_b or current_b.name.lower() != bname.lower():
+                existing_b = db.scalar(
+                    select(Brand).where(Brand.tenant_id == tenant_id, func.lower(Brand.name) == bname.lower())
+                )
+                if existing_b:
+                    existing_b.is_deleted = False
+                    resolved_brand_id = existing_b.id
+                else:
+                    nb = Brand(tenant_id=tenant_id, name=bname)
+                    db.add(nb)
+                    db.flush()
+                    resolved_brand_id = nb.id
         else:
-            nb = Brand(tenant_id=tenant_id, name=bname)
-            db.add(nb)
-            db.flush()
-            resolved_brand_id = nb.id
+            resolved_brand_id = None
 
     resolved_model_id = model_id
-    if not resolved_model_id and model_name and model_name.strip() and resolved_brand_id:
+    if model_name is not None:
         mname = model_name.strip()
-        existing_m = db.scalar(
-            select(ProductModel).where(
-                ProductModel.tenant_id == tenant_id,
-                ProductModel.brand_id == resolved_brand_id,
-                func.lower(ProductModel.name) == mname.lower(),
-            )
-        )
-        if existing_m:
-            existing_m.is_deleted = False
-            resolved_model_id = existing_m.id
+        if mname and resolved_brand_id:
+            current_m = db.get(ProductModel, resolved_model_id) if resolved_model_id else None
+            if not current_m or current_m.name.lower() != mname.lower() or current_m.brand_id != resolved_brand_id:
+                existing_m = db.scalar(
+                    select(ProductModel).where(
+                        ProductModel.tenant_id == tenant_id,
+                        ProductModel.brand_id == resolved_brand_id,
+                        func.lower(ProductModel.name) == mname.lower(),
+                    )
+                )
+                if existing_m:
+                    existing_m.is_deleted = False
+                    resolved_model_id = existing_m.id
+                else:
+                    nm = ProductModel(tenant_id=tenant_id, brand_id=resolved_brand_id, name=mname)
+                    db.add(nm)
+                    db.flush()
+                    resolved_model_id = nm.id
         else:
-            nm = ProductModel(tenant_id=tenant_id, brand_id=resolved_brand_id, name=mname)
-            db.add(nm)
-            db.flush()
-            resolved_model_id = nm.id
+            resolved_model_id = None
 
     return resolved_brand_id, resolved_model_id
 

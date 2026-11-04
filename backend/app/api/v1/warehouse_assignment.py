@@ -204,7 +204,7 @@ def _to_warehouse_out(db: Session, tenant_id: uuid.UUID, wh: Warehouse) -> Wareh
 @router.get("/warehouses", response_model=list[WarehouseOut])
 def list_warehouses(
     db: Session = Depends(get_db),
-    me: User = Depends(require_permission("warehouse.view")),
+    me: User = Depends(require_permission("warehouse.view", "product.view", "product.create", "product.update", "fixture.view", "fixture.create")),
 ):
     whs = db.scalars(
         select(Warehouse)

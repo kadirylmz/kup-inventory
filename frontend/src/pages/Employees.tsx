@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Building, Eye, Loader2, Plus, Trash2, UserSquare, X } from 'lucide-react'
+import { Building, Edit3, Eye, Loader2, Plus, Trash2, UserSquare, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { api } from '@/lib/api'
 import { useAuth } from '@/lib/auth'
@@ -42,6 +42,7 @@ export default function EmployeesPage() {
   const [openEmpModal, setOpenEmpModal] = useState(false)
   const [openDeptModal, setOpenDeptModal] = useState(false)
   const [selectedEmp, setSelectedEmp] = useState<EmployeeItem | null>(null)
+  const [editingEmp, setEditingEmp] = useState<EmployeeItem | null>(null)
 
   const [fullName, setFullName] = useState('')
   const [deptId, setDeptId] = useState('')
@@ -93,22 +94,57 @@ export default function EmployeesPage() {
     }
   }
 
-  const createEmployee = async (e: FormEvent) => {
+  const openCreateEmpModal = () => {
+    setEditingEmp(null)
+    setFullName('')
+    setDeptId('')
+    setPosition('')
+    setEmail('')
+    setPhone('')
+    setOpenEmpModal(true)
+  }
+
+  const openEditEmpModal = (emp: EmployeeItem) => {
+    setEditingEmp(emp)
+    setFullName(emp.full_name)
+    setDeptId(emp.department_id || '')
+    setPosition(emp.position || '')
+    setEmail(emp.email || '')
+    setPhone(emp.phone || '')
+    setOpenEmpModal(true)
+  }
+
+  const saveEmployee = async (e: FormEvent) => {
     e.preventDefault()
     try {
-      await api('/employees', {
-        method: 'POST',
-        body: JSON.stringify({
-          full_name: fullName,
-          department_id: deptId || null,
-          position: position || null,
-          email: email || null,
-          phone: phone || null,
-        }),
-      })
-      toast.success('Personel kaydı oluşturuldu.')
+      if (editingEmp) {
+        await api(`/employees/${editingEmp.id}`, {
+          method: 'PATCH',
+          body: JSON.stringify({
+            full_name: fullName,
+            department_id: deptId || null,
+            position: position || null,
+            email: email || null,
+            phone: phone || null,
+          }),
+        })
+        toast.success('Personel bilgileri güncellendi.')
+      } else {
+        await api('/employees', {
+          method: 'POST',
+          body: JSON.stringify({
+            full_name: fullName,
+            department_id: deptId || null,
+            position: position || null,
+            email: email || null,
+            phone: phone || null,
+          }),
+        })
+        toast.success('Personel kaydı oluşturuldu.')
+      }
       qc.invalidateQueries({ queryKey: ['employees'] })
       setOpenEmpModal(false)
+      setEditingEmp(null)
       setFullName('')
       setPosition('')
       setEmail('')
@@ -161,7 +197,7 @@ export default function EmployeesPage() {
         {can('employee.manage') && (
           <div className="flex gap-2">
             <button
-              onClick={() => setOpenEmpModal(true)}
+              onClick={openCreateEmpModal}
               className="flex items-center gap-2 rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700"
             >
               <Plus className="h-4 w-4" /> Yeni Personel
@@ -235,8 +271,15 @@ export default function EmployeesPage() {
                       {can('employee.manage') && (
                         <>
                           <button
+                            onClick={() => openEditEmpModal(emp)}
+                            title="Personeli Düzenle"
+                            className="inline-flex items-center gap-0.5 text-xs text-brand-600 hover:underline"
+                          >
+                            <Edit3 className="h-3.5 w-3.5" /> Düzenle
+                          </button>
+                          <button
                             onClick={() => toggleActive(emp)}
-                            className="text-xs text-brand-600 hover:underline"
+                            className="text-xs text-slate-600 hover:underline dark:text-slate-400"
                           >
                             {emp.is_active ? 'Pasifleştir' : 'Aktifleştir'}
                           </button>
@@ -315,15 +358,15 @@ export default function EmployeesPage() {
         </div>
       )}
 
-      {/* Yeni Personel Modalı */}
+      {/* Personel Ekle / Düzenle Modalı */}
       {openEmpModal && (
         <div className="fixed inset-0 z-50 grid place-items-center bg-black/50 p-4">
           <form
-            onSubmit={createEmployee}
+            onSubmit={saveEmployee}
             className="w-full max-w-md space-y-4 rounded-2xl bg-white p-6 shadow-xl dark:bg-slate-900"
           >
             <div className="flex items-center justify-between">
-              <h2 className="text-lg font-bold">Yeni Personel Kaydı</h2>
+              <h2 className="text-lg font-bold">{editingEmp ? 'Personel Düzenle' : 'Yeni Personel Kaydı'}</h2>
               <button type="button" onClick={() => setOpenEmpModal(false)}>
                 <X className="h-5 w-5 text-slate-400" />
               </button>
@@ -390,7 +433,7 @@ export default function EmployeesPage() {
                 İptal
               </button>
               <button className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white">
-                Kaydet
+                {editingEmp ? 'Güncelle' : 'Kaydet'}
               </button>
             </div>
           </form>

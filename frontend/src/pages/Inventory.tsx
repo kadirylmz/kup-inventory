@@ -31,6 +31,7 @@ import { useAuth } from '@/lib/auth'
 import { cleanNumInput, fmtMoney, fmtQty } from '@/lib/format'
 import type { CategoryItem } from '@/pages/Categories'
 import type { BrandItem, ModelItem, SupplierItem } from '@/pages/BrandsModels'
+import type { WarehouseItem } from '@/pages/Warehouses'
 
 export interface ProductItem {
   id: string
@@ -250,6 +251,10 @@ export default function InventoryPage({ isFixtureOnly = false }: { isFixtureOnly
     queryKey: ['suppliers'],
     queryFn: () => api<SupplierItem[]>('/suppliers'),
   })
+  const { data: warehouses = [] } = useQuery({
+    queryKey: ['warehouses'],
+    queryFn: () => api<WarehouseItem[]>('/warehouses'),
+  })
   const { data: projects = [] } = useQuery({
     queryKey: ['projects'],
     queryFn: () => api<ProjectSummary[]>('/projects'),
@@ -358,7 +363,7 @@ export default function InventoryPage({ isFixtureOnly = false }: { isFixtureOnly
     setFMarketCurr('TRY')
     setFStatus('in_warehouse')
     setFIsFixture(isFixtureOnly)
-    setFWarehouse('Merkez Depo')
+    setFWarehouse(warehouses[0]?.name || 'Merkez Depo')
     setFShelf('')
     setFLocation('')
     setFDesc('')
@@ -1712,13 +1717,27 @@ export default function InventoryPage({ isFixtureOnly = false }: { isFixtureOnly
                   />
                 </label>
                 <label className="block text-sm font-medium">
-                  Depo Adı
-                  <input
-                    value={fWarehouse}
-                    onChange={e => setFWarehouse(e.target.value)}
-                    className={inputCls + ' mt-1'}
-                    placeholder="Merkez Depo"
-                  />
+                  Depo *
+                  {warehouses.length > 0 ? (
+                    <select
+                      value={fWarehouse}
+                      onChange={e => setFWarehouse(e.target.value)}
+                      className={inputCls + ' mt-1'}
+                    >
+                      {warehouses.map(w => (
+                        <option key={w.id} value={w.name}>
+                          {w.name} {w.code ? `(${w.code})` : ''}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      value={fWarehouse}
+                      onChange={e => setFWarehouse(e.target.value)}
+                      className={inputCls + ' mt-1'}
+                      placeholder="Merkez Depo"
+                    />
+                  )}
                 </label>
                 <label className="block text-sm font-medium">
                   Raf / Bölüm

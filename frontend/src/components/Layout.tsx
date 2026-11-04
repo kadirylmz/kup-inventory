@@ -68,17 +68,23 @@ export default function Layout() {
     staleTime: 1000 * 60 * 5,
   })
 
+  const currentLogo = appSettings?.logo_url || '/custom_logo.jpg'
+
   const visibleNav = NAV.filter(n => !n.perm || can(n.perm))
 
   return (
     <div className="flex h-screen">
       <aside className="hidden w-64 shrink-0 flex-col border-r border-slate-200 bg-white md:flex dark:border-slate-800 dark:bg-slate-900 print:hidden">
         <div className="flex items-center gap-2.5 px-4 py-3.5 border-b border-slate-100 dark:border-slate-800/60">
-          {appSettings?.logo_url ? (
+          {currentLogo ? (
             <img
-              src={appSettings.logo_url}
+              src={currentLogo}
               alt="Logo"
               className="h-9 max-w-[120px] object-contain rounded"
+              onError={e => {
+                // Eğer yüklenen logo yüklenemezse veya hata verirse
+                e.currentTarget.style.display = 'none'
+              }}
             />
           ) : (
             <div className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-brand-600 text-white shadow-sm">

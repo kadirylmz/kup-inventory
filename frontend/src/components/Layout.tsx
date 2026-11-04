@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '@/lib/api'
 import { Link, NavLink, Outlet } from 'react-router-dom'
+import defaultLogoImg from '@/assets/logo.jpg'
 import {
   Bell,
   Boxes,
@@ -16,7 +17,6 @@ import {
   Moon,
   Package,
   Repeat,
-  Scale,
   Settings,
   ShieldCheck,
   Sun,
@@ -68,7 +68,8 @@ export default function Layout() {
     staleTime: 1000 * 60 * 5,
   })
 
-  const currentLogo = appSettings?.logo_url || '/custom_logo.jpg'
+  const [imgError, setImgError] = useState(false)
+  const displayLogo = (!imgError && appSettings?.logo_url) ? appSettings.logo_url : defaultLogoImg
 
   const visibleNav = NAV.filter(n => !n.perm || can(n.perm))
 
@@ -76,21 +77,12 @@ export default function Layout() {
     <div className="flex h-screen">
       <aside className="hidden w-64 shrink-0 flex-col border-r border-slate-200 bg-white md:flex dark:border-slate-800 dark:bg-slate-900 print:hidden">
         <div className="flex items-center gap-2.5 px-4 py-3.5 border-b border-slate-100 dark:border-slate-800/60">
-          {currentLogo ? (
-            <img
-              src={currentLogo}
-              alt="Logo"
-              className="h-9 max-w-[120px] object-contain rounded"
-              onError={e => {
-                // Eğer yüklenen logo yüklenemezse veya hata verirse
-                e.currentTarget.style.display = 'none'
-              }}
-            />
-          ) : (
-            <div className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-brand-600 text-white shadow-sm">
-              <Scale className="h-5 w-5" />
-            </div>
-          )}
+          <img
+            src={displayLogo}
+            alt="Logo"
+            className="h-9 max-w-[120px] object-contain rounded"
+            onError={() => setImgError(true)}
+          />
           <span className="font-bold tracking-tight text-sm truncate text-slate-800 dark:text-slate-100" title={appSettings?.company_name || 'KÜP INVENTORY'}>
             {appSettings?.company_name || 'KÜP INVENTORY'}
           </span>

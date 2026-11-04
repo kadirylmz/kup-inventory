@@ -284,7 +284,7 @@ export default function InventoryPage({ isFixtureOnly = false }: { isFixtureOnly
       return p.status === 'assigned' || Number(p.assigned_quantity || 0) > 0 || !!p.assigned_summary
     }
     if (statusFilter === 'in_warehouse') {
-      return p.status === 'in_warehouse' || Number(p.warehouse_quantity ?? p.quantity) > 0
+      return p.status === 'in_warehouse' || Number(p.warehouse_quantity ?? (p.quantity || 0)) > 0
     }
     return p.status === statusFilter
   })
@@ -1085,7 +1085,7 @@ export default function InventoryPage({ isFixtureOnly = false }: { isFixtureOnly
                               </span>
                               <div className="flex flex-wrap gap-1 text-[11px]">
                                 <span className="rounded bg-emerald-50 px-1.5 py-0.5 font-medium text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300">
-                                  {fmtQty(p.warehouse_quantity ?? p.quantity)} Depoda
+                                  {fmtQty(p.warehouse_quantity ?? '0')} Depoda
                                 </span>
                                 {Number(p.assigned_quantity || 0) > 0 && (
                                   <span className="rounded bg-purple-50 px-1.5 py-0.5 font-medium text-purple-700 dark:bg-purple-500/15 dark:text-purple-300">
@@ -1111,7 +1111,7 @@ export default function InventoryPage({ isFixtureOnly = false }: { isFixtureOnly
                               </div>
                               <div className="flex flex-wrap gap-1 text-[11px]">
                                 <span className="rounded bg-emerald-50 px-1.5 py-0.5 font-medium text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300">
-                                  {fmtQty(p.warehouse_quantity ?? p.quantity)} Depoda
+                                  {fmtQty(p.warehouse_quantity ?? '0')} Depoda
                                 </span>
                                 {Number(p.assigned_quantity || 0) > 0 && (
                                   <span className="rounded bg-purple-50 px-1.5 py-0.5 font-medium text-purple-700 dark:bg-purple-500/15 dark:text-purple-300">
@@ -2183,7 +2183,7 @@ export default function InventoryPage({ isFixtureOnly = false }: { isFixtureOnly
                   <div className="text-xs text-slate-500">Depo / Stok Dağılımı</div>
                   <div className="font-semibold">
                     <span className="text-emerald-600">
-                      {fmtQty(selectedProduct.warehouse_quantity ?? selectedProduct.quantity)} Depoda
+                      {fmtQty(selectedProduct.warehouse_quantity ?? '0')} Depoda
                     </span>
                     {Number(selectedProduct.assigned_quantity || 0) > 0 && (
                       <span className="ml-1 text-purple-600">

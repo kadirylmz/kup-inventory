@@ -184,7 +184,6 @@ class Assignment(BaseMixin, Base):
 
     assignment_no: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
     employee_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("employees.id"), nullable=False, index=True)
-    from_warehouse_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("warehouses.id"), nullable=True)
     delivered_by_user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
     delivered_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     expected_return_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -195,7 +194,6 @@ class Assignment(BaseMixin, Base):
     note: Mapped[str | None] = mapped_column(Text)
 
     employee: Mapped[Employee] = relationship(lazy="selectin")
-    from_warehouse: Mapped[Warehouse | None] = relationship(lazy="selectin", foreign_keys=[from_warehouse_id])
     delivered_by: Mapped[User] = relationship(lazy="selectin")
     items: Mapped[list["AssignmentItem"]] = relationship(
         back_populates="assignment", cascade="all, delete-orphan", lazy="selectin"

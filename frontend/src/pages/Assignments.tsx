@@ -7,7 +7,6 @@ import { useAuth } from '@/lib/auth'
 import type { EmployeeItem } from '@/pages/Employees'
 import type { WarehouseItem } from '@/pages/Warehouses'
 import type { AssetItem, ProductItem } from '@/pages/Inventory'
-import type { StockBalanceItem } from '@/pages/Warehouses'
 
 interface AssignmentLine {
   id: string
@@ -25,8 +24,6 @@ interface AssignmentLine {
 interface AssignmentRecord {
   id: string
   assignment_no: string
-  from_warehouse_id: string | null
-  from_warehouse_name: string | null
   employee_id: string
   employee_name: string
   employee_department: string | null
@@ -85,22 +82,6 @@ export default function AssignmentsPage() {
     queryKey: ['assets'],
     queryFn: () => api<AssetItem[]>('/assets'),
   })
-  const { data: allStockBalances = [] } = useQuery({
-    queryKey: ['warehouse-stock'],
-    queryFn: () => api<StockBalanceItem[]>('/warehouses/stock'),
-  })
-
-  // Seçilen depodaki stok miktarları haritası (product_id -> bakiye)
-  const selectedWhStockMap = fromWhId
-    ? allStockBalances
-        .filter(b => b.warehouse_id === fromWhId && b.source_type === 'warehouse')
-        .reduce<Record<string, number>>((acc, b) => {
-          acc[b.product_id] = (acc[b.product_id] || 0) + Number(b.quantity || 0)
-          return acc
-        }, {})
-    : {}
-
-  const selectedWhName = warehouses.find(w => w.id === fromWhId)?.name || ''
 
   const openNewAssignment = () => {
     if (!employees.length) {
@@ -111,9 +92,8 @@ export default function AssignmentsPage() {
       toast.error('Önce Envanter menüsünden ürün ekleyin.')
       return
     }
-    const initialWhId = warehouses[0]?.id || ''
     setEmpId(employees[0].id)
-    setFromWhId(initialWhId)
+    setFromWhId(warehouses[0]?.id || '')
     setNote('')
     setLines([{ product_id: products[0].id, asset_id: '', quantity: '1' }])
     setOpenCreate(true)
@@ -121,45 +101,12 @@ export default function AssignmentsPage() {
 
   const submitAssignment = async (e: FormEvent) => {
     e.preventDefault()
-    if (!fromWhId) {
-      toast.error('Lütfen çıkış yapılacak depoyu seçin.')
-      return
-    }
-
-    // Frontend doğrulaması
-    for (const l of lines) {
-      const prod = products.find(p => p.id === l.product_id)
-      const prodName = prod?.name || 'Ürün'
-      if (l.asset_id) {
-        const ast = assets.find(a => a.id === l.asset_id)
-        if (ast && ast.warehouse_name && ast.warehouse_name !== selectedWhName) {
-          toast.error(
-            `'${ast.serial_number}' seri numaralı cihaz '${ast.warehouse_name}' deposundadır. '${selectedWhName}' üzerinden teslim edilemez!`
-          )
-          return
-        }
-      } else {
-        const currentWhQty = selectedWhStockMap[l.product_id] || 0
-        const reqQty = Number(l.quantity || 0)
-        if (reqQty <= 0) {
-          toast.error(`'${prodName}' için geçerli bir teslim adedi girin.`)
-          return
-        }
-        if (reqQty > currentWhQty) {
-          toast.error(
-            `'${prodName}' için ${selectedWhName} deposunda yeterli stok yok! (Mevcut: ${currentWhQty}, İstenen: ${reqQty})`
-          )
-          return
-        }
-      }
-    }
-
     try {
       await api('/assignments', {
         method: 'POST',
         body: JSON.stringify({
           employee_id: empId,
-          from_warehouse_id: fromWhId,
+          from_warehouse_id: fromWhId || null,
           note: note || null,
           items: lines.map(l => ({
             product_id: l.product_id,
@@ -174,7 +121,6 @@ export default function AssignmentsPage() {
       qc.invalidateQueries({ queryKey: ['employees'] })
       qc.invalidateQueries({ queryKey: ['assets'] })
       qc.invalidateQueries({ queryKey: ['movements'] })
-      qc.invalidateQueries({ queryKey: ['warehouse-stock'] })
       setOpenCreate(false)
     } catch (err) {
       toast.error((err as Error).message)
@@ -455,7 +401,7 @@ export default function AssignmentsPage() {
                                   <button
                                     onClick={() => {
                                       setRetQty(String(rem))
-                                      setRetWhId(asg.from_warehouse_id || warehouses[0]?.id || '')
+                                      setRetWhId(warehouses[0]?.id || '')
                                       setReturnModal({ assignment: asg, item: it })
                                     }}
                                     className="inline-flex items-center gap-1 rounded bg-emerald-600 px-2.5 py-1 font-semibold text-white hover:bg-emerald-700"
@@ -521,19 +467,13 @@ export default function AssignmentsPage() {
               </label>
 
               <label className="block text-sm font-medium">
-                Çıkış Yapılan Depo *
+                Çıkış Yapılan Depo
                 <select
-                  required
                   value={fromWhId}
-                  onChange={e => {
-                    const newWhId = e.target.value
-                    setFromWhId(newWhId)
-                    // Depo değiştiğinde seçili seri cihazları sıfırla ki yanlış depodaki cihaz seçili kalmasın
-                    setLines(lines.map(l => ({ ...l, asset_id: '' })))
-                  }}
+                  onChange={e => setFromWhId(e.target.value)}
                   className={inputCls + ' mt-1'}
                 >
-                  <option value="">— Çıkış Yapılacak Depoyu Seçin —</option>
+                  <option value="">— Seçin —</option>
                   {warehouses.map(w => (
                     <option key={w.id} value={w.id}>
                       {w.name}
@@ -559,126 +499,87 @@ export default function AssignmentsPage() {
                   + Kalem Ekle
                 </button>
               </div>
-              {lines.map((ln, idx) => {
-                const whQty = selectedWhStockMap[ln.product_id] || 0
-                const availableAssetsForProd = assets.filter(
-                  a =>
-                    a.product_id === ln.product_id &&
-                    a.status !== 'assigned' &&
-                    (!fromWhId || !a.warehouse_name || a.warehouse_name === selectedWhName)
-                )
-                const hasStockInWh = whQty > 0 || availableAssetsForProd.length > 0
-
-                return (
-                  <div key={idx} className="space-y-1">
-                    <div className="grid grid-cols-12 gap-2">
-                      <div className="col-span-5">
-                        <select
-                          value={ln.product_id}
-                          onChange={e => {
-                            const next = [...lines]
-                            next[idx].product_id = e.target.value
-                            next[idx].asset_id = ''
-                            next[idx].quantity = '1'
-                            setLines(next)
-                          }}
-                          className={inputCls}
-                        >
-                          <optgroup label="Teknik Envanter Ürünleri">
-                            {products
-                              .filter(p => !p.is_fixture)
-                              .map(p => {
-                                const pWhQty = selectedWhStockMap[p.id] || 0
-                                const pAssets = assets.filter(
-                                  a =>
-                                    a.product_id === p.id &&
-                                    a.status !== 'assigned' &&
-                                    (!fromWhId || !a.warehouse_name || a.warehouse_name === selectedWhName)
-                                )
-                                const pAvailable = p.tracking_type === 'serial' ? pAssets.length : pWhQty
-                                return (
-                                  <option key={p.id} value={p.id}>
-                                    [Envanter] {p.name} {fromWhId ? `(Bu Depoda: ${pAvailable} ${p.unit || 'Adet'})` : ''}
-                                  </option>
-                                )
-                              })}
-                          </optgroup>
-                          <optgroup label="Şirket Demirbaşları">
-                            {products
-                              .filter(p => p.is_fixture)
-                              .map(p => {
-                                const pWhQty = selectedWhStockMap[p.id] || 0
-                                const pAssets = assets.filter(
-                                  a =>
-                                    a.product_id === p.id &&
-                                    a.status !== 'assigned' &&
-                                    (!fromWhId || !a.warehouse_name || a.warehouse_name === selectedWhName)
-                                )
-                                const pAvailable = p.tracking_type === 'serial' ? pAssets.length : pWhQty
-                                return (
-                                  <option key={p.id} value={p.id}>
-                                    [Demirbaş] {p.name} {fromWhId ? `(Bu Depoda: ${pAvailable} ${p.unit || 'Adet'})` : ''}
-                                  </option>
-                                )
-                              })}
-                          </optgroup>
-                        </select>
-                      </div>
-                      <div className="col-span-4">
-                        <select
-                          value={ln.asset_id}
-                          onChange={e => {
-                            const next = [...lines]
-                            next[idx].asset_id = e.target.value
-                            setLines(next)
-                          }}
-                          className={inputCls}
-                        >
-                          <option value="">— Seri Cihaz Seçin (Opsiyonel) —</option>
-                          {availableAssetsForProd.map(a => (
-                            <option key={a.id} value={a.id}>
-                              {a.serial_number} {a.warehouse_name ? `(${a.warehouse_name})` : ''}
+              {lines.map((ln, idx) => (
+                <div key={idx} className="grid grid-cols-12 gap-2">
+                  <div className="col-span-5">
+                    <select
+                      value={ln.product_id}
+                      onChange={e => {
+                        const next = [...lines]
+                        next[idx].product_id = e.target.value
+                        next[idx].asset_id = ''
+                        setLines(next)
+                      }}
+                      className={inputCls}
+                    >
+                      <optgroup label="Teknik Envanter Ürünleri">
+                        {products
+                          .filter(p => !p.is_fixture)
+                          .map(p => (
+                            <option key={p.id} value={p.id}>
+                              [Envanter] {p.name}
                             </option>
                           ))}
-                        </select>
-                      </div>
-                      <div className="col-span-2">
-                        <input
-                          type="number"
-                          min="1"
-                          max={ln.asset_id ? 1 : Math.max(1, whQty)}
-                          step="1"
-                          disabled={!!ln.asset_id}
-                          value={ln.asset_id ? '1' : ln.quantity}
-                          onChange={e => {
-                            const next = [...lines]
-                            next[idx].quantity = e.target.value
-                            setLines(next)
-                          }}
-                          className={inputCls}
-                          title={ln.asset_id ? 'Seri cihaz tesliminde adet 1 dir.' : `Maksimum teslim adedi: ${whQty}`}
-                        />
-                      </div>
-                      <div className="col-span-1 flex items-center justify-center">
-                        {lines.length > 1 && (
-                          <button
-                            type="button"
-                            onClick={() => setLines(lines.filter((_, i) => i !== idx))}
-                            className="text-slate-400 hover:text-rose-600"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                    {fromWhId && !hasStockInWh && (
-                      <div className="text-[11px] font-medium text-amber-600 dark:text-amber-400 pl-1">
-                        ⚠️ Bu ürün seçili <strong>{selectedWhName}</strong> deposunda tükenmiş veya mevcut değil. Çıkış için lütfen ürünün bulunduğu depoyu seçin.
-                      </div>
+                      </optgroup>
+                      <optgroup label="Şirket Demirbaşları">
+                        {products
+                          .filter(p => p.is_fixture)
+                          .map(p => (
+                            <option key={p.id} value={p.id}>
+                              [Demirbaş] {p.name}
+                            </option>
+                          ))}
+                      </optgroup>
+                    </select>
+                  </div>
+                  <div className="col-span-4">
+                    <select
+                      value={ln.asset_id}
+                      onChange={e => {
+                        const next = [...lines]
+                        next[idx].asset_id = e.target.value
+                        setLines(next)
+                      }}
+                      className={inputCls}
+                    >
+                      <option value="">— Seri Cihaz Seçin —</option>
+                      {assets
+                        .filter(a => a.product_id === ln.product_id && a.status !== 'assigned')
+                        .map(a => (
+                          <option key={a.id} value={a.id}>
+                            {a.serial_number}
+                          </option>
+                        ))}
+                    </select>
+                  </div>
+                  <div className="col-span-2">
+                    <input
+                      type="number"
+                      min="1"
+                      step="1"
+                      disabled={!!ln.asset_id}
+                      value={ln.asset_id ? '1' : ln.quantity}
+                      onChange={e => {
+                        const next = [...lines]
+                        next[idx].quantity = e.target.value
+                        setLines(next)
+                      }}
+                      className={inputCls}
+                    />
+                  </div>
+                  <div className="col-span-1 flex items-center justify-center">
+                    {lines.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => setLines(lines.filter((_, i) => i !== idx))}
+                        className="text-slate-400 hover:text-rose-600"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
                     )}
                   </div>
-                )
-              })}
+                </div>
+              ))}
             </div>
 
             <label className="block text-sm font-medium">
@@ -720,7 +621,7 @@ export default function AssignmentsPage() {
                 <X className="h-5 w-5 text-slate-400" />
               </button>
             </div>
-            <div className="rounded-lg bg-slate-50 p-3 text-xs dark:bg-slate-800 space-y-1">
+            <div className="rounded-lg bg-slate-50 p-3 text-xs dark:bg-slate-800">
               <div>
                 <strong>Personel:</strong> {returnModal.assignment.employee_name}
               </div>
@@ -728,11 +629,6 @@ export default function AssignmentsPage() {
                 <strong>Ürün:</strong> {returnModal.item.product_name}{' '}
                 {returnModal.item.serial_number && `(SN: ${returnModal.item.serial_number})`}
               </div>
-              {returnModal.assignment.from_warehouse_name && (
-                <div className="text-slate-600 dark:text-slate-400">
-                  <strong>Çıkış Deposu:</strong> {returnModal.assignment.from_warehouse_name}
-                </div>
-              )}
             </div>
 
             <label className="block text-sm font-medium">
@@ -750,14 +646,6 @@ export default function AssignmentsPage() {
                 ))}
               </select>
             </label>
-
-            {returnModal.assignment.from_warehouse_id &&
-              retWhId &&
-              returnModal.assignment.from_warehouse_id !== retWhId && (
-                <div className="rounded-lg border border-amber-300 bg-amber-50 p-2.5 text-xs text-amber-800 dark:border-amber-700/60 dark:bg-amber-950/30 dark:text-amber-300">
-                  ⚠️ <strong>Farklı Depoya İade Uyarısı:</strong> Bu ürün <strong>{returnModal.assignment.from_warehouse_name}</strong> deposundan zimmetlenmiştir. İadeyi <strong>{warehouses.find(w => w.id === retWhId)?.name}</strong> deposuna almak üzeresiniz. Onaylarsanız stok bu yeni depoya girecektir.
-                </div>
-              )}
 
             <div className="grid grid-cols-2 gap-3">
               <label className="block text-sm font-medium">

@@ -537,7 +537,18 @@ def _resolve_brand_and_model(
     resolved_model_id = model_id
     if model_name is not None:
         mname = model_name.strip()
-        if mname and resolved_brand_id:
+        if mname:
+            # Eğer kullanıcı marka girmemiş ama model yazmışsa otomatik 'Genel' markası oluştur/bağla
+            if not resolved_brand_id:
+                genel_b = db.scalar(
+                    select(Brand).where(Brand.tenant_id == tenant_id, func.lower(Brand.name) == "genel")
+                )
+                if not genel_b:
+                    genel_b = Brand(tenant_id=tenant_id, name="Genel")
+                    db.add(genel_b)
+                    db.flush()
+                resolved_brand_id = genel_b.id
+
             current_m = db.get(ProductModel, resolved_model_id) if resolved_model_id else None
             if not current_m or current_m.name.lower() != mname.lower() or current_m.brand_id != resolved_brand_id:
                 existing_m = db.scalar(

@@ -195,6 +195,8 @@ class Assignment(BaseMixin, Base):
 
     employee: Mapped[Employee] = relationship(lazy="selectin")
     delivered_by: Mapped[User] = relationship(lazy="selectin")
+    from_warehouse_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("warehouses.id"), index=True)
+    from_warehouse: Mapped["Warehouse | None"] = relationship(lazy="selectin")
     items: Mapped[list["AssignmentItem"]] = relationship(
         back_populates="assignment", cascade="all, delete-orphan", lazy="selectin"
     )

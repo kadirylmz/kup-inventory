@@ -796,6 +796,26 @@ def reverse_movement(
             )
         )
 
+    # Eğer tersi alınan hareket bir zimmet hareketi ise (assign), bağlı zimmeti de iade alındı olarak güncelle
+    if orig.movement_type == "assign" and orig.note:
+        m_asg = re.search(r'\[(ZIM-[0-9]+)\]', orig.note)
+        if m_asg:
+            target_asg_no = m_asg.group(1)
+            linked_asg = db.scalar(
+                select(Assignment).where(
+                    Assignment.tenant_id == me.tenant_id,
+                    Assignment.assignment_no == target_asg_no,
+                    Assignment.is_deleted.is_(False),
+                )
+            )
+            if linked_asg:
+                now_rev = datetime.now(timezone.utc)
+                for a_it in linked_asg.items:
+                    a_it.returned_quantity = a_it.quantity
+                    a_it.is_returned = True
+                    a_it.returned_at = now_rev
+                linked_asg.status = "returned"
+
     orig.is_reversed = True
     rev = StockMovement(
         tenant_id=me.tenant_id,
@@ -898,6 +918,26 @@ def delete_movement(
                         _adjust_balance(db, me.tenant_id, prod, mov.from_warehouse_id, mov.from_location_id, item.quantity)
                 except HTTPException:
                     pass
+
+        # Eğer silinen ve stoğu iade edilen hareket bir zimmet hareketi ise bağlı zimmeti iade edildi olarak işaretle
+        if mov.movement_type == "assign" and mov.note:
+            m_asg = re.search(r'\[(ZIM-[0-9]+)\]', mov.note)
+            if m_asg:
+                target_asg_no = m_asg.group(1)
+                linked_asg = db.scalar(
+                    select(Assignment).where(
+                        Assignment.tenant_id == me.tenant_id,
+                        Assignment.assignment_no == target_asg_no,
+                        Assignment.is_deleted.is_(False),
+                    )
+                )
+                if linked_asg:
+                    now_del = datetime.now(timezone.utc)
+                    for a_it in linked_asg.items:
+                        a_it.returned_quantity = a_it.quantity
+                        a_it.is_returned = True
+                        a_it.returned_at = now_del
+                    linked_asg.status = "returned"
 
     # Bu harekete bağlı transfer veya ters işlem referanslarını temizle
     for trf in db.scalars(select(Transfer).where(Transfer.movement_id == mov.id)):
@@ -1355,9 +1395,12 @@ def delete_employee(
 def _to_assignment_out(a: Assignment, dept_map: dict[uuid.UUID, str]) -> AssignmentOut:
     emp = a.employee
     dept_name = dept_map.get(emp.department_id) if emp and emp.department_id else None
+    wh_name = a.from_warehouse.name if getattr(a, "from_warehouse", None) else None
     return AssignmentOut(
         id=a.id,
         assignment_no=a.assignment_no,
+        from_warehouse_id=getattr(a, "from_warehouse_id", None),
+        from_warehouse_name=wh_name,
         employee_id=a.employee_id,
         employee_name=emp.full_name if emp else "",
         employee_department=dept_name,
@@ -1519,6 +1562,7 @@ def create_assignment(
     asg = Assignment(
         tenant_id=me.tenant_id,
         assignment_no=assign_no,
+        from_warehouse_id=body.from_warehouse_id,
         employee_id=emp.id,
         delivered_by_user_id=me.id,
         expected_return_date=body.expected_return_date,
@@ -1714,6 +1758,9 @@ def bulk_delete_assignments(
     count = 0
     now = datetime.now(timezone.utc)
     for asg in asgs:
+        target_wh = (
+            db.get(Warehouse, asg.from_warehouse_id) if asg.from_warehouse_id else None
+        ) or def_wh
         for item in asg.items:
             if not item.is_returned:
                 rem = item.quantity - item.returned_quantity
@@ -1721,14 +1768,26 @@ def bulk_delete_assignments(
                     if item.asset:
                         item.asset.status = "in_warehouse"
                         item.asset.assigned_employee_name = None
-                        if def_wh:
-                            item.asset.warehouse_name = def_wh.name
-                    elif item.product and def_wh:
-                        _adjust_balance(db, me.tenant_id, item.product, def_wh.id, None, rem)
+                        if target_wh:
+                            item.asset.warehouse_name = target_wh.name
+                    elif item.product and target_wh:
+                        _adjust_balance(db, me.tenant_id, item.product, target_wh.id, None, rem)
                         if (item.product.quantity or Decimal("0")) > 0:
                             item.product.status = "in_warehouse"
                 item.is_returned = True
                 item.returned_at = now
+
+        linked_movs = db.scalars(
+            select(StockMovement).where(
+                StockMovement.tenant_id == me.tenant_id,
+                StockMovement.movement_type == "assign",
+                StockMovement.note.like(f"[{asg.assignment_no}]%"),
+            )
+        ).all()
+        for l_mov in linked_movs:
+            l_mov.is_reversed = True
+
+        asg.status = "returned"
         asg.is_deleted = True
         asg.deleted_at = now
         count += 1
@@ -1762,8 +1821,10 @@ def delete_assignment(
     if not asg or asg.tenant_id != me.tenant_id or asg.is_deleted:
         raise HTTPException(404, "Zimmet kaydı bulunamadı.")
 
-    # Varsayılan depo (iade edilmemişlerin geri döneceği depo)
-    def_wh = db.scalar(
+    # Çıkış yapılan depo veya varsayılan depo (iade edilmemişlerin geri döneceği depo)
+    target_wh = (
+        db.get(Warehouse, asg.from_warehouse_id) if asg.from_warehouse_id else None
+    ) or db.scalar(
         select(Warehouse).where(
             Warehouse.tenant_id == me.tenant_id,
             Warehouse.is_deleted.is_(False),
@@ -1783,15 +1844,27 @@ def delete_assignment(
                 if item.asset:
                     item.asset.status = "in_warehouse"
                     item.asset.assigned_employee_name = None
-                    if def_wh:
-                        item.asset.warehouse_name = def_wh.name
-                elif item.product and def_wh:
-                    _adjust_balance(db, me.tenant_id, item.product, def_wh.id, None, rem)
+                    if target_wh:
+                        item.asset.warehouse_name = target_wh.name
+                elif item.product and target_wh:
+                    _adjust_balance(db, me.tenant_id, item.product, target_wh.id, None, rem)
                     if (item.product.quantity or Decimal("0")) > 0 and item.product.status == "assigned":
                         item.product.status = "in_warehouse"
             item.is_returned = True
             item.returned_at = datetime.now(timezone.utc)
 
+    # İlgili stok hareketini is_reversed yap ki hareketler ekranından tekrar ters işlemle çift iade edilmesin
+    linked_movs = db.scalars(
+        select(StockMovement).where(
+            StockMovement.tenant_id == me.tenant_id,
+            StockMovement.movement_type == "assign",
+            StockMovement.note.like(f"[{asg.assignment_no}]%"),
+        )
+    ).all()
+    for l_mov in linked_movs:
+        l_mov.is_reversed = True
+
+    asg.status = "returned"
     asg.is_deleted = True
     asg.deleted_at = datetime.now(timezone.utc)
 
@@ -1831,7 +1904,9 @@ def delete_assignment_item(
 
     rem = item.quantity - item.returned_quantity
     if rem > 0 and not item.is_returned:
-        def_wh = db.scalar(
+        target_wh = (
+            db.get(Warehouse, asg.from_warehouse_id) if asg.from_warehouse_id else None
+        ) or db.scalar(
             select(Warehouse).where(
                 Warehouse.tenant_id == me.tenant_id,
                 Warehouse.is_deleted.is_(False),
@@ -1849,8 +1924,8 @@ def delete_assignment_item(
             item.asset.assigned_employee_name = None
             item.asset.is_deleted = False
             item.asset.is_active = True
-            if def_wh:
-                item.asset.warehouse_name = def_wh.name
+            if target_wh:
+                item.asset.warehouse_name = target_wh.name
             if item.asset.product and item.asset.product.is_deleted:
                 item.asset.product.is_deleted = False
                 item.asset.product.is_active = True
@@ -1859,8 +1934,8 @@ def delete_assignment_item(
             if item.product.is_deleted:
                 item.product.is_deleted = False
                 item.product.is_active = True
-            if def_wh:
-                _adjust_balance(db, me.tenant_id, item.product, def_wh.id, None, rem)
+            if target_wh:
+                _adjust_balance(db, me.tenant_id, item.product, target_wh.id, None, rem)
             else:
                 item.product.quantity = (item.product.quantity or Decimal("0")) + rem
             if (item.product.quantity or Decimal("0")) > 0:

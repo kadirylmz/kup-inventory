@@ -391,6 +391,11 @@ export default function AssignmentsPage() {
                       </div>
                       <div className="mt-1 text-base font-bold">
                         Teslim Alan: {asg.employee_name}{' '}
+                        {asg.from_warehouse_name && (
+                          <span className="ml-2 inline-flex items-center gap-1 rounded bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                            Depo: {asg.from_warehouse_name}
+                          </span>
+                        )}
                         <span className="text-xs font-normal text-slate-500">
                           ({[asg.employee_department, asg.employee_position].filter(Boolean).join(' • ')})
                         </span>
@@ -428,6 +433,7 @@ export default function AssignmentsPage() {
                       <tr>
                         <th className="p-2.5">Envanter Kodu</th>
                         <th className="p-2.5">Ürün Adı</th>
+                        <th className="p-2.5">Marka / Model</th>
                         <th className="p-2.5">Seri Numarası</th>
                         <th className="p-2.5">Teslim Adedi</th>
                         <th className="p-2.5">İade Edilen</th>
@@ -442,10 +448,14 @@ export default function AssignmentsPage() {
                             <td className="p-2.5 font-mono text-brand-600">{it.inventory_code}</td>
                             <td className="p-2.5 font-medium">
                               <div>{it.product_name}</div>
-                              {(it.brand_name || it.model_name) && (
-                                <div className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+                            </td>
+                            <td className="p-2.5">
+                              {it.model_name || it.brand_name ? (
+                                <div className="inline-flex items-center gap-1 rounded bg-indigo-50 px-2 py-0.5 text-xs font-semibold text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300">
                                   {[it.brand_name, it.model_name].filter(Boolean).join(' • ')}
                                 </div>
+                              ) : (
+                                <span className="text-slate-400">—</span>
                               )}
                             </td>
                             <td className="p-2.5 font-mono font-bold">{it.serial_number || '—'}</td>
@@ -883,6 +893,7 @@ export default function AssignmentsPage() {
                   <tr className="bg-slate-100">
                     <th className="border border-slate-300 p-2 text-left">Envanter Kodu</th>
                     <th className="border border-slate-300 p-2 text-left">Ürün / Cihaz Adı</th>
+                    <th className="border border-slate-300 p-2 text-left">Marka / Model</th>
                     <th className="border border-slate-300 p-2 text-left">Seri Numarası</th>
                     <th className="border border-slate-300 p-2 text-center">Teslim Adedi</th>
                     <th className="border border-slate-300 p-2 text-center">İade Durumu</th>
@@ -894,11 +905,9 @@ export default function AssignmentsPage() {
                       <td className="border border-slate-300 p-2 font-mono">{it.inventory_code}</td>
                       <td className="border border-slate-300 p-2 font-medium">
                         <div>{it.product_name}</div>
-                        {(it.brand_name || it.model_name) && (
-                          <div className="text-[10px] text-slate-500">
-                            {[it.brand_name, it.model_name].filter(Boolean).join(' / ')}
-                          </div>
-                        )}
+                      </td>
+                      <td className="border border-slate-300 p-2 text-xs">
+                        {[it.brand_name, it.model_name].filter(Boolean).join(' / ') || '—'}
                       </td>
                       <td className="border border-slate-300 p-2 font-mono">{it.serial_number || '—'}</td>
                       <td className="border border-slate-300 p-2 text-center">{Number(it.quantity)}</td>

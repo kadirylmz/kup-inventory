@@ -1562,7 +1562,6 @@ def create_assignment(
     asg = Assignment(
         tenant_id=me.tenant_id,
         assignment_no=assign_no,
-        from_warehouse_id=body.from_warehouse_id,
         employee_id=emp.id,
         delivered_by_user_id=me.id,
         expected_return_date=body.expected_return_date,
@@ -1570,6 +1569,11 @@ def create_assignment(
         note=body.note,
         items=a_items,
     )
+    if hasattr(asg, "from_warehouse_id") and body.from_warehouse_id:
+        try:
+            setattr(asg, "from_warehouse_id", body.from_warehouse_id)
+        except Exception:
+            pass
     db.add(asg)
 
     mov = StockMovement(

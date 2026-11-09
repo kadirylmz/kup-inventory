@@ -29,6 +29,8 @@ interface ActiveEmpAsset {
   delivered_at: string
   product_id: string
   product_name: string
+  brand_name?: string | null
+  model_name?: string | null
   inventory_code: string
   asset_id: string | null
   serial_number: string | null
@@ -341,6 +343,11 @@ export default function EmployeesPage() {
                         <td className="p-3 font-mono text-xs font-bold text-brand-600">{item.assignment_no}</td>
                         <td className="p-3">
                           <div className="font-medium">{item.product_name}</div>
+                          {(item.brand_name || item.model_name) && (
+                            <div className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+                              {[item.brand_name, item.model_name].filter(Boolean).join(' • ')}
+                            </div>
+                          )}
                           <div className="font-mono text-xs text-slate-500">{item.inventory_code}</div>
                         </td>
                         <td className="p-3 font-mono font-bold">{item.serial_number || '—'}</td>

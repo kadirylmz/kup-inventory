@@ -13,6 +13,8 @@ interface AssignmentLine {
   id: string
   product_id: string
   product_name: string
+  brand_name?: string | null
+  model_name?: string | null
   inventory_code: string
   asset_id: string | null
   serial_number: string | null
@@ -438,7 +440,14 @@ export default function AssignmentsPage() {
                         return (
                           <tr key={it.id} className="border-t border-slate-100 dark:border-slate-800">
                             <td className="p-2.5 font-mono text-brand-600">{it.inventory_code}</td>
-                            <td className="p-2.5 font-medium">{it.product_name}</td>
+                            <td className="p-2.5 font-medium">
+                              <div>{it.product_name}</div>
+                              {(it.brand_name || it.model_name) && (
+                                <div className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+                                  {[it.brand_name, it.model_name].filter(Boolean).join(' • ')}
+                                </div>
+                              )}
+                            </td>
                             <td className="p-2.5 font-mono font-bold">{it.serial_number || '—'}</td>
                             <td className="p-2.5 font-semibold">{Number(it.quantity)}</td>
                             <td className="p-2.5">
@@ -598,7 +607,7 @@ export default function AssignmentsPage() {
                                 const pAvailable = p.tracking_type === 'serial' ? pAssets.length : pWhQty
                                 return (
                                   <option key={p.id} value={p.id}>
-                                    [Envanter] {p.name} {fromWhId ? `(Bu Depoda: ${pAvailable} ${p.unit || 'Adet'})` : ''}
+                                    [Envanter] {p.name}{p.model_name ? ` (${p.model_name})` : p.brand_name ? ` (${p.brand_name})` : ''} {fromWhId ? `(Bu Depoda: ${pAvailable} ${p.unit || 'Adet'})` : ''}
                                   </option>
                                 )
                               })}
@@ -617,7 +626,7 @@ export default function AssignmentsPage() {
                                 const pAvailable = p.tracking_type === 'serial' ? pAssets.length : pWhQty
                                 return (
                                   <option key={p.id} value={p.id}>
-                                    [Demirbaş] {p.name} {fromWhId ? `(Bu Depoda: ${pAvailable} ${p.unit || 'Adet'})` : ''}
+                                    [Demirbaş] {p.name}{p.model_name ? ` (${p.model_name})` : p.brand_name ? ` (${p.brand_name})` : ''} {fromWhId ? `(Bu Depoda: ${pAvailable} ${p.unit || 'Adet'})` : ''}
                                   </option>
                                 )
                               })}
@@ -726,6 +735,8 @@ export default function AssignmentsPage() {
               </div>
               <div>
                 <strong>Ürün:</strong> {returnModal.item.product_name}{' '}
+                {[returnModal.item.brand_name, returnModal.item.model_name].filter(Boolean).length > 0 &&
+                  `(${[returnModal.item.brand_name, returnModal.item.model_name].filter(Boolean).join(' - ')}) `}
                 {returnModal.item.serial_number && `(SN: ${returnModal.item.serial_number})`}
               </div>
               {returnModal.assignment.from_warehouse_name && (
@@ -881,7 +892,14 @@ export default function AssignmentsPage() {
                   {printRecord.items.map(it => (
                     <tr key={it.id}>
                       <td className="border border-slate-300 p-2 font-mono">{it.inventory_code}</td>
-                      <td className="border border-slate-300 p-2 font-medium">{it.product_name}</td>
+                      <td className="border border-slate-300 p-2 font-medium">
+                        <div>{it.product_name}</div>
+                        {(it.brand_name || it.model_name) && (
+                          <div className="text-[10px] text-slate-500">
+                            {[it.brand_name, it.model_name].filter(Boolean).join(' / ')}
+                          </div>
+                        )}
+                      </td>
                       <td className="border border-slate-300 p-2 font-mono">{it.serial_number || '—'}</td>
                       <td className="border border-slate-300 p-2 text-center">{Number(it.quantity)}</td>
                       <td className="border border-slate-300 p-2 text-center">

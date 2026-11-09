@@ -87,6 +87,8 @@ class StockBalanceOut(BaseModel):
     id: uuid.UUID
     product_id: uuid.UUID
     product_name: str
+    brand_name: str | None = None
+    model_name: str | None = None
     inventory_code: str
     unit: str
     warehouse_id: uuid.UUID
@@ -126,6 +128,8 @@ class MovementItemOut(BaseModel):
     id: uuid.UUID
     product_id: uuid.UUID
     product_name: str
+    brand_name: str | None = None
+    model_name: str | None = None
     inventory_code: str
     asset_id: uuid.UUID | None
     serial_number: str | None
@@ -254,6 +258,8 @@ class AssignmentItemOut(BaseModel):
     id: uuid.UUID
     product_id: uuid.UUID
     product_name: str
+    brand_name: str | None = None
+    model_name: str | None = None
     inventory_code: str
     asset_id: uuid.UUID | None
     serial_number: str | None

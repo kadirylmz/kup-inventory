@@ -1137,8 +1137,20 @@ def update_product(
                         quantity=p.quantity,
                     )
                 )
-        elif "quantity" in updates:
-            sb.quantity = p.quantity
+        else:
+            # Depo adı güncellendiyse stok bakiyesini ve varlık lokasyonunu seçilen yeni depoya taşı
+            if "warehouse_name" in updates and updates["warehouse_name"]:
+                sb.warehouse_id = wh.id
+                for a in db.scalars(
+                    select(Asset).where(
+                        Asset.tenant_id == me.tenant_id,
+                        Asset.product_id == p.id,
+                        Asset.is_deleted.is_(False),
+                    )
+                ):
+                    a.warehouse_name = wh.name
+            if "quantity" in updates:
+                sb.quantity = p.quantity
 
     if attrs is not None:
         p.attributes.clear()

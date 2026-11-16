@@ -24,7 +24,15 @@ if errorlevel 1 (
 )
 echo.
 
-echo [3/3] Pycache ve gecici derleme dosyalari temizleniyor...
+echo [3/4] Frontend yeniden derleniyor...
+cd /d "%~dp0frontend"
+if exist node_modules (
+    call npm run build
+)
+cd /d "%~dp0"
+echo.
+
+echo [4/4] Pycache ve gecici derleme dosyalari temizleniyor...
 for /d /r . %%d in (__pycache__) do @if exist "%%d" rd /s /q "%%d" >nul 2>&1
 echo.
 

@@ -164,6 +164,9 @@ export default function InventoryPage({ isFixtureOnly = false }: { isFixtureOnly
     const urlStatus = searchParams.get('status')
     if (urlStatus !== null) {
       setStatusFilter(urlStatus)
+      if (urlStatus === 'assigned') {
+        setTab('products')
+      }
     }
   }, [searchParams])
 

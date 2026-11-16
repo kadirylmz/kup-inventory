@@ -244,11 +244,17 @@ export default function DashboardPage() {
         {statusCards.map(s => (
           <button
             key={s.status}
-            onClick={() =>
-              s.status === 'licenses' || s.status === 'renewals'
-                ? nav('/lisanslar')
-                : nav(`/envanter?status=${s.status}`)
-            }
+            onClick={() => {
+              if (s.status === 'licenses' || s.status === 'renewals') {
+                nav('/lisanslar')
+              } else if (s.status === 'assigned') {
+                nav('/zimmetler')
+              } else if (s.status === 'in_project') {
+                nav('/projeler')
+              } else {
+                nav(`/envanter?status=${s.status}`)
+              }
+            }}
             className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-3.5 text-left transition hover:border-brand-500 dark:border-slate-800 dark:bg-slate-900"
           >
             <s.icon className={`h-5 w-5 shrink-0 ${s.cls}`} />

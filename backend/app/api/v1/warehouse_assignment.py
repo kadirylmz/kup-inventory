@@ -1276,6 +1276,7 @@ def list_employees(
             .join(AssignmentItem, AssignmentItem.assignment_id == Assignment.id)
             .where(
                 Assignment.tenant_id == me.tenant_id,
+                Assignment.is_deleted.is_(False),
                 AssignmentItem.is_returned.is_(False),
             )
             .group_by(Assignment.employee_id)
@@ -1462,6 +1463,7 @@ def list_employee_active_items(
         .join(Assignment, Assignment.id == AssignmentItem.assignment_id)
         .where(
             Assignment.tenant_id == me.tenant_id,
+            Assignment.is_deleted.is_(False),
             Assignment.employee_id == employee_id,
             AssignmentItem.is_returned.is_(False),
         )

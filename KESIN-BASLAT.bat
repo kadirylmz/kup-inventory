@@ -15,8 +15,12 @@ echo.
 
 :: 1. Postgres Kontrolu
 echo [1/3] PostgreSQL kontrol ediliyor...
-set "PG_DIR=C:\Program Files\PostgreSQL\18"
-if exist "%PG_DIR%\bin\pg_ctl.exe" (
+set "PG_DIR="
+if exist "C:\Program Files\PostgreSQL\18\bin\pg_ctl.exe" set "PG_DIR=C:\Program Files\PostgreSQL\18"
+if not defined PG_DIR if exist "C:\Program Files\PostgreSQL\17\bin\pg_ctl.exe" set "PG_DIR=C:\Program Files\PostgreSQL\17"
+if not defined PG_DIR if exist "C:\Program Files\PostgreSQL\16\bin\pg_ctl.exe" set "PG_DIR=C:\Program Files\PostgreSQL\16"
+
+if defined PG_DIR (
     if exist "%PG_DIR%\data\postmaster.pid" (
         "%PG_DIR%\bin\pg_ctl.exe" -D "%PG_DIR%\data" status >nul 2>&1
         if errorlevel 1 (
@@ -26,12 +30,15 @@ if exist "%PG_DIR%\bin\pg_ctl.exe" (
     )
     "%PG_DIR%\bin\pg_ctl.exe" -D "%PG_DIR%\data" status >nul 2>&1
     if errorlevel 1 (
-        echo       PostgreSQL sunucusu baslatiliyor...
-        "%PG_DIR%\bin\pg_ctl.exe" -D "%PG_DIR%\data" start >nul 2>&1
-        timeout /t 2 >nul
+        echo       PostgreSQL servisi baslatiliyor...
+        "%PG_DIR%\bin\pg_ctl.exe" -D "%PG_DIR%\data" -l "%PG_DIR%\data\logfile" start >nul 2>&1
+        timeout /t 3 >nul
     ) else (
         echo       PostgreSQL veritabani zaten calisiyor.
     )
+) else (
+    echo       [UYARI] Standart PostgreSQL dizini bulunamadi, Windows Servisi kontrol ediliyor...
+    net start postgresql* >nul 2>&1
 )
 echo.
 
